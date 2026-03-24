@@ -4,25 +4,25 @@ function getResponseText(data) {
   }
 
   if (Array.isArray(data?.output)) {
-    const parts = [];
+    const texts = [];
 
     for (const item of data.output) {
       if (Array.isArray(item?.content)) {
-        for (const c of item.content) {
-          if (typeof c?.text === 'string' && c.text.trim()) {
-            parts.push(c.text);
+        for (const part of item.content) {
+          if (typeof part?.text === 'string' && part.text.trim()) {
+            texts.push(part.text.trim());
           }
         }
       }
     }
 
-    return parts.join('\n').trim();
+    if (texts.length) return texts.join('\n');
   }
 
   return '';
 }
 
-function extractJsonObject(text) {
+function tryParseJson(text) {
   if (!text) return null;
 
   const cleaned = text
@@ -34,12 +34,13 @@ function extractJsonObject(text) {
     return JSON.parse(cleaned);
   } catch {}
 
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    const candidate = cleaned.slice(start, end + 1);
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const slice = cleaned.slice(firstBrace, lastBrace + 1);
     try {
-      return JSON.parse(candidate);
+      return JSON.parse(slice);
     } catch {}
   }
 
@@ -63,7 +64,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
     }
 
-    // STEP 1: identify the item
+    // Step 1: identify the item
     const visionRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -80,14 +81,17 @@ export default async function handler(req, res) {
                 type: 'input_text',
                 text: `Identify the MAIN product in this image.
 
-Return ONLY JSON in this exact shape:
+Return ONLY valid JSON in exactly this format:
 {
-  "itemName": "specific product name",
-  "category": "clothing|shoes|bag|jewelry|accessory|home_decor|electronics|beauty|other",
-  "description": "2 short sentences about color, style, material, and notable details",
+  "itemName": "specific item name",
+  "category": "clothing",
+  "description": "short visual description",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "estimatedPrice": { "min": 20, "max": 120 }
-}`
+  "estimatedPrice": { "min": 20, "max": 100 }
+}
+
+Allowed categories:
+clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other`
               },
               {
                 type: 'input_image',
@@ -108,11 +112,11 @@ Return ONLY JSON in this exact shape:
     }
 
     const visionText = getResponseText(visionData);
-    const parsedItem = extractJsonObject(visionText);
+    const parsedItem = tryParseJson(visionText);
 
     if (!parsedItem) {
       return res.status(500).json({
-        error: `Could not parse item identification result. Raw model output: ${visionText || 'empty response'}`
+        error: `Could not parse item identification result. Raw output: ${visionText || 'empty response'}`
       });
     }
 
@@ -131,11 +135,11 @@ Return ONLY JSON in this exact shape:
 
     if (!item.itemName) {
       return res.status(500).json({
-        error: `Item identification came back incomplete. Raw model output: ${visionText || 'empty response'}`
+        error: `Item identification incomplete. Raw output: ${visionText || 'empty response'}`
       });
     }
 
-    // STEP 2: search for listings
+    // Step 2: search listings
     const searchRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -158,11 +162,11 @@ Rules:
 - direct product URLs only
 - include price
 - include shipping when possible
-- if shipping is unknown, use 0 and explain that in note
+- if shipping is unknown, use 0 and mention that in note
 - include totalCost = price + shipping
 - sort cheapest first
 
-Return ONLY JSON in this exact shape:
+Return ONLY valid JSON in this format:
 {
   "results": [
     {
@@ -188,7 +192,7 @@ Return ONLY JSON in this exact shape:
     }
 
     const searchText = getResponseText(searchData);
-    const parsedResults = extractJsonObject(searchText);
+    const parsedResults = tryParseJson(searchText);
 
     let results = Array.isArray(parsedResults?.results) ? parsedResults.results : [];
 
