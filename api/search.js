@@ -10,45 +10,45 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing imageBase64' });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
+      return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
     }
 
-    // Step 1: identify the item
-    const visionRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const visionRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [
+        model: 'gpt-4.1-mini',
+        input: [
           {
             role: 'user',
             content: [
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: imageBase64
-                }
+                type: 'input_text',
+                text: `You are a fashion and product identification expert.
+Identify the MAIN item in this image.
+
+Return ONLY valid raw JSON.
+Do not use markdown.
+Do not use code fences.
+Do not add explanation.
+
+Schema:
+{
+  "itemName": "specific descriptive name",
+  "category": "clothing|shoes|bag|jewelry|accessory|home_decor|electronics|beauty|other",
+  "description": "2 short sentences describing color, material, shape, style, and notable visual details",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "estimatedPrice": { "min": 20, "max": 120 }
+}`
               },
               {
-                type: 'text',
-                text: `You are a fashion and product expert. Identify the main item in this image.
-Return ONLY raw JSON with no markdown, no backticks, no extra text:
-{
-  "itemName": "descriptive name like 'Oversized beige linen blazer' or 'Mini brown leather crossbody bag'",
-  "category": "clothing|shoes|bag|jewelry|accessory|home_decor|electronics|beauty|other",
-  "description": "2 sentences covering style, color, material, and key identifying features",
-  "keywords": ["4 to 6 search keywords"],
-  "estimatedPrice": { "min": 25, "max": 150 }
-}`
+                type: 'input_image',
+                image_url: `data:image/jpeg;base64,${imageBase64}`
               }
             ]
           }
@@ -60,64 +60,67 @@ Return ONLY raw JSON with no markdown, no backticks, no extra text:
 
     if (!visionRes.ok) {
       return res.status(500).json({
-        error: visionData?.error?.message || `Vision API error (${visionRes.status})`
+        error: visionData?.error?.message || `Vision request failed (${visionRes.status})`
       });
     }
 
-    const visionText = (
-      visionData?.content?.find(block => block.type === 'text')?.text || '{}'
-    ).replace(/```json|```/g, '').trim();
+    const visionText = (visionData.output_text || '').trim();
 
     let item;
     try {
       item = JSON.parse(visionText);
     } catch {
       return res.status(500).json({
-        error: 'Could not identify the item. Try a clearer photo with better lighting.'
+        error: 'Could not parse the item identification result'
       });
     }
 
-    // Step 2: search for prices
-    const searchRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [
-          {
-            role: 'user',
-            content: `You are a price comparison shopping expert. Find the cheapest current listings for: "${item.itemName}".
+    const searchPrompt = `You are a shopping deal finder.
 
-Details: ${item.description}
+Find 5 to 7 real current listings for this item:
+Item: ${item.itemName}
+Description: ${item.description}
 Keywords: ${(item.keywords || []).join(', ')}
-Expected price: $${item.estimatedPrice?.min}–$${item.estimatedPrice?.max}
+Expected price range: $${item.estimatedPrice?.min || 0}-$${item.estimatedPrice?.max || 0}
 
-Search across: Amazon, ASOS, Shein, Zara, H&M, Target, Walmart, eBay, Poshmark, Nordstrom Rack, ThredUp, Revolve, Forever 21.
-Find 5–7 REAL current listings with REAL prices and REAL direct product URLs.
+Search across stores like Amazon, Walmart, Target, ASOS, Zara, H&M, Nordstrom Rack, eBay, Poshmark, ThredUp, Revolve, and similar retailers/resale marketplaces.
 
-Return ONLY raw JSON (no markdown, no backticks):
+Requirements:
+- real current listings only
+- real direct product URLs only
+- include current price
+- include shipping when possible
+- if shipping is unknown, use 0 and mention that in note
+- sort by totalCost ascending
+
+Return ONLY valid raw JSON.
+No markdown. No backticks. No explanation.
+
+Schema:
 {
   "results": [
     {
-      "store": "Store Name",
+      "store": "Store name",
       "productName": "Exact product title",
       "price": 29.99,
       "shipping": 0,
       "totalCost": 29.99,
-      "url": "https://direct-product-url.com/product",
-      "note": "e.g. Free returns · In stock"
+      "url": "https://...",
+      "note": "Free returns · In stock"
     }
   ]
-}
-Sort ascending by totalCost. shipping:0 means free shipping.`
-          }
-        ]
+}`;
+
+    const searchRes = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        tools: [{ type: 'web_search' }],
+        input: searchPrompt
       })
     });
 
@@ -125,25 +128,40 @@ Sort ascending by totalCost. shipping:0 means free shipping.`
 
     if (!searchRes.ok) {
       return res.status(500).json({
-        error: searchData?.error?.message || `Search error (${searchRes.status})`
+        error: searchData?.error?.message || `Search request failed (${searchRes.status})`
       });
     }
 
-    const allText = (searchData.content || [])
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
+    const searchText = (searchData.output_text || '').trim();
 
     let results = [];
     try {
-      const match = allText.match(/\{[\s\S]*"results"[\s\S]*\}/);
-      const parsed = match ? JSON.parse(match[0]) : { results: [] };
+      const parsed = JSON.parse(searchText);
       results = Array.isArray(parsed.results) ? parsed.results : [];
     } catch {
-      results = [];
+      const match = searchText.match(/\{[\s\S]*"results"[\s\S]*\}/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[0]);
+          results = Array.isArray(parsed.results) ? parsed.results : [];
+        } catch {
+          results = [];
+        }
+      }
     }
 
-    results.sort((a, b) => (a.totalCost || a.price || 0) - (b.totalCost || b.price || 0));
+    results = results
+      .filter(r => r && r.productName && r.store)
+      .map(r => ({
+        store: String(r.store || '').trim(),
+        productName: String(r.productName || '').trim(),
+        price: Number(r.price || 0),
+        shipping: Number(r.shipping || 0),
+        totalCost: Number(r.totalCost ?? (Number(r.price || 0) + Number(r.shipping || 0))),
+        url: String(r.url || '').trim(),
+        note: String(r.note || '').trim()
+      }))
+      .sort((a, b) => a.totalCost - b.totalCost);
 
     return res.status(200).json({ item, results });
   } catch (error) {
