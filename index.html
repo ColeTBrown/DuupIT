@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dupe It — Find It Cheaper</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#1a1118;--ink-soft:#5c4a57;--ink-muted:#a08a9a;
+  --petal:#f5c9d4;--petal-deep:#e8879f;--petal-pale:#fdf4f6;--petal-mid:#f9e0e7;
+  --wine:#8b3a5a;--wine-light:#c47a96;
+  --cream:#fefbf9;--white:#ffffff;
+  --border:rgba(232,135,159,0.2);--border-s:rgba(232,135,159,0.4);
+}
+html{scroll-behavior:smooth}
+body{font-family:'Jost',sans-serif;background:var(--cream);color:var(--ink);min-height:100vh}
+
+.orb{position:fixed;pointer-events:none;z-index:0;border-radius:50%;filter:blur(90px);opacity:.5}
+.orb1{width:700px;height:700px;top:-200px;right:-200px;background:radial-gradient(circle,#f5c9d4,transparent 70%)}
+.orb2{width:500px;height:500px;bottom:-150px;left:-150px;background:radial-gradient(circle,#f9e0e7,transparent 70%)}
+
+.page{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:0 28px 80px}
+
+/* Header */
+header{padding:60px 0 44px;text-align:center;animation:rise .9s cubic-bezier(.16,1,.3,1) both}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--wine-light);font-weight:500;margin-bottom:22px}
+.eline{width:32px;height:1px;background:var(--petal-deep)}
+.brand{font-family:'Cormorant Garamond',serif;font-size:clamp(3rem,7vw,5rem);font-weight:300;line-height:1;color:var(--ink);margin-bottom:10px}
+.brand em{font-style:italic;color:var(--wine)}
+.brand-sub{font-family:'Cormorant Garamond',serif;font-size:clamp(1rem,2vw,1.2rem);font-weight:300;font-style:italic;color:var(--ink-soft);margin-bottom:28px;letter-spacing:.02em}
+.htags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.htag{font-size:11px;letter-spacing:.07em;text-transform:uppercase;padding:5px 14px;border-radius:100px;font-weight:500;background:var(--petal-mid);color:var(--wine);border:1px solid var(--border)}
+
+/* Upload */
+.ucard{background:var(--white);border-radius:28px;border:1.5px dashed var(--petal-deep);padding:64px 32px;text-align:center;cursor:pointer;transition:all .35s ease;position:relative;overflow:hidden;animation:rise .9s .12s cubic-bezier(.16,1,.3,1) both;margin-bottom:24px}
+.ucard::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(245,201,212,.22),transparent 60%);pointer-events:none}
+.ucard:hover,.ucard.drag-on{border-color:var(--wine);background:var(--petal-pale);transform:translateY(-3px);box-shadow:0 20px 60px rgba(139,58,90,.12)}
+.uicon{width:88px;height:88px;border-radius:50%;background:var(--petal-mid);border:1.5px solid var(--petal-deep);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:36px;transition:transform .4s cubic-bezier(.34,1.56,.64,1)}
+.ucard:hover .uicon{transform:scale(1.1) rotate(-6deg)}
+.uhed{font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:400;color:var(--ink);margin-bottom:8px}
+.ucopy{font-size:.88rem;color:var(--ink-muted);margin-bottom:28px;line-height:1.6;max-width:440px;margin-left:auto;margin-right:auto}
+.brow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+.pill{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.88rem;font-weight:500;letter-spacing:.04em;cursor:pointer;border:none;transition:all .25s ease;text-decoration:none}
+.pf{background:var(--wine);color:var(--white);box-shadow:0 6px 20px rgba(139,58,90,.3)}
+.pf:hover{background:var(--ink);transform:translateY(-2px);box-shadow:0 10px 30px rgba(26,17,24,.25)}
+.pg{background:var(--white);color:var(--wine);border:1.5px solid var(--petal-deep)}
+.pg:hover{background:var(--petal-mid);transform:translateY(-2px)}
+#fi,#ci{display:none}
+
+/* Preview */
+.prev-sec{display:none;animation:rise .5s cubic-bezier(.16,1,.3,1) both;margin-bottom:20px}
+.prev-sec.on{display:block}
+.prev-card{background:var(--white);border-radius:24px;border:1px solid var(--border);padding:24px;box-shadow:0 8px 40px rgba(139,58,90,.07);display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.pthumb{width:150px;height:150px;object-fit:cover;border-radius:18px;flex-shrink:0;border:2px solid var(--petal-mid)}
+.pmeta{flex:1;min-width:180px;padding-top:4px}
+.pey{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--wine-light);font-weight:500;margin-bottom:8px}
+.ptitle{font-family:'Cormorant Garamond',serif;font-size:1.3rem;color:var(--ink);margin-bottom:16px;font-weight:400}
+.bfind{background:linear-gradient(135deg,var(--wine) 0%,var(--petal-deep) 100%);color:var(--white);border:none;padding:14px 30px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.9rem;font-weight:500;cursor:pointer;letter-spacing:.04em;box-shadow:0 8px 24px rgba(139,58,90,.35);transition:all .3s ease;display:inline-flex;align-items:center;gap:8px}
+.bfind:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(139,58,90,.4)}
+.bfind:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.breset{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:none;border:none;color:var(--ink-muted);font-family:'Jost',sans-serif;font-size:.82rem;cursor:pointer;padding:4px 0;transition:color .2s}
+.breset:hover{color:var(--wine)}
+
+/* Loading */
+.load-sec{display:none;text-align:center;padding:72px 20px;animation:rise .4s ease both}
+.load-sec.on{display:block}
+.spinner{width:56px;height:56px;margin:0 auto 24px;border-radius:50%;border:2px solid var(--petal-mid);border-top-color:var(--wine);animation:spin 1s linear infinite}
+.lhed{font-family:'Cormorant Garamond',serif;font-size:1.4rem;font-style:italic;color:var(--ink);margin-bottom:8px}
+.lsub{font-size:.85rem;color:var(--ink-muted);margin-bottom:16px}
+.dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--petal-deep);margin:0 3px;animation:bounce 1.4s ease-in-out infinite}
+.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+
+/* Error */
+.errbox{display:none;background:#fff5f6;border:1px solid #f5b8c4;border-radius:16px;padding:18px 22px;color:#8b2a42;font-size:.88rem;line-height:1.6;margin:20px 0}
+.errbox.on{display:block}
+
+/* Results */
+.rtop{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px}
+.rhed{font-family:'Cormorant Garamond',serif;font-size:1.8rem;font-weight:400;color:var(--ink)}
+.rbadge{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;background:var(--petal-mid);color:var(--wine);padding:5px 14px;border-radius:100px;border:1px solid var(--border)}
+.idbar{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:16px 20px;margin-bottom:22px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(139,58,90,.05);animation:rise .4s ease both}
+.id-ico{font-size:26px}
+.id-lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:3px}
+.id-name{font-family:'Cormorant Garamond',serif;font-size:1.1rem;color:var(--ink)}
+.id-desc{font-size:.8rem;color:var(--ink-soft);margin-top:3px;line-height:1.5}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:18px}
+.card{background:var(--white);border-radius:22px;border:1px solid var(--border);padding:22px;display:flex;flex-direction:column;box-shadow:0 4px 20px rgba(139,58,90,.05);transition:all .3s ease;position:relative;overflow:hidden;animation:rise .5s ease both}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--petal-deep),var(--wine));opacity:0;transition:opacity .3s}
+.card:hover{transform:translateY(-5px);box-shadow:0 16px 50px rgba(139,58,90,.13)}
+.card:hover::after,.card.top::after{opacity:1}
+.card.top{border-color:var(--petal-deep)}
+.bestpill{position:absolute;top:14px;right:14px;background:var(--wine);color:var(--white);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:100px}
+.cstore{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--wine-light);margin-bottom:8px}
+.cname{font-family:'Cormorant Garamond',serif;font-size:1.05rem;color:var(--ink);line-height:1.4;margin-bottom:6px;flex:1}
+.cnote{font-size:.78rem;color:var(--ink-muted);margin-bottom:14px;line-height:1.5}
+.cprice{font-family:'Cormorant Garamond',serif;font-size:1.8rem;font-weight:600;color:var(--wine);margin-bottom:4px}
+.cship{font-size:.78rem;color:var(--ink-muted);margin-bottom:14px}
+.cfree{color:#3d8f5f;font-weight:600}
+.cbtn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.82rem;font-weight:500;letter-spacing:.04em;cursor:pointer;text-decoration:none;border:1.5px solid var(--petal-deep);background:var(--petal-pale);color:var(--wine);transition:all .25s ease}
+.cbtn:hover{background:var(--wine);color:var(--white);border-color:var(--wine)}
+.card.top .cbtn{background:var(--wine);color:var(--white);border-color:var(--wine)}
+.card.top .cbtn:hover{background:var(--ink);border-color:var(--ink)}
+
+/* Tips */
+.tips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:36px 0;animation:rise .9s .25s cubic-bezier(.16,1,.3,1) both}
+.tip{background:var(--white);border-radius:18px;border:1px solid var(--border);padding:18px 20px;display:flex;gap:14px;box-shadow:0 2px 12px rgba(139,58,90,.04)}
+.tico{font-size:22px;flex-shrink:0;margin-top:1px}
+.thed{font-weight:500;font-size:.88rem;color:var(--ink);margin-bottom:4px}
+.ttxt{font-size:.78rem;color:var(--ink-soft);line-height:1.55}
+
+/* Footer */
+footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margin-top:24px;animation:rise .9s .35s cubic-bezier(.16,1,.3,1) both}
+.credit{font-family:'Cormorant Garamond',serif;font-size:.95rem;font-style:italic;color:var(--ink-muted)}
+.credit strong{color:var(--wine);font-style:normal;font-weight:600}
+
+/* Animations */
+@keyframes rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes bounce{0%,100%{transform:translateY(0);opacity:.3}50%{transform:translateY(-6px);opacity:1}}
+
+@media(max-width:560px){
+  .brand{font-size:2.8rem}
+  .pthumb{width:110px;height:110px}
+  .grid{grid-template-columns:1fr}
+  header{padding:40px 0 32px}
+}
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<div class="page">
+
+  <header>
+    <div class="eyebrow"><span class="eline"></span>AI-Powered Shopping<span class="eline"></span></div>
+    <div class="brand"><em>Dupe</em> It</div>
+    <div class="brand-sub">Find it cheaper, love it more.</div>
+    <div class="htags">
+      <span class="htag">👗 Fashion</span>
+      <span class="htag">👜 Bags</span>
+      <span class="htag">👠 Shoes</span>
+      <span class="htag">✨ Accessories</span>
+      <span class="htag">🏠 Home</span>
+    </div>
+  </header>
+
+  <div class="ucard" id="dz">
+    <div class="uicon">📸</div>
+    <div class="uhed">Drop a photo, find a deal</div>
+    <p class="ucopy">Screenshot an outfit, snap what someone's wearing, or upload from your camera roll — we'll find the cheapest place to buy it online with shipping included.</p>
+    <div class="brow">
+      <button class="pill pf" type="button" onclick="document.getElementById('fi').click()">🖼 Upload Image</button>
+      <button class="pill pg" type="button" onclick="document.getElementById('ci').click()">📷 Use Camera</button>
+    </div>
+    <input type="file" id="fi" accept="image/*" onchange="loadFile(this.files[0])"/>
+    <input type="file" id="ci" accept="image/*" capture="environment" onchange="loadFile(this.files[0])"/>
+  </div>
+
+  <div class="prev-sec" id="prevSec">
+    <div class="prev-card">
+      <img class="pthumb" id="prevImg" src="" alt="Preview"/>
+      <div class="pmeta">
+        <div class="pey">Photo ready ✦</div>
+        <div class="ptitle" id="prevTitle">Your image</div>
+        <button class="bfind" id="findBtn" type="button" onclick="doSearch()">✦ Find Cheapest Prices</button>
+        <br/>
+        <button class="breset" type="button" onclick="reset()">↩ Change photo</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="load-sec" id="loadSec">
+    <div class="spinner"></div>
+    <div class="lhed" id="lhed">Identifying your item…</div>
+    <div class="lsub" id="lsub">Using AI vision to analyze your photo</div>
+    <div class="dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="errbox" id="errBox"></div>
+
+  <div id="resultsSec" style="display:none"></div>
+
+  <div class="tips" id="tipsRow">
+    <div class="tip"><span class="tico">📱</span><div><div class="thed">Screenshot anything</div><div class="ttxt">See it on TikTok or Pinterest? Screenshot and drop it here — AI identifies every item.</div></div></div>
+    <div class="tip"><span class="tico">💸</span><div><div class="thed">Shipping included</div><div class="ttxt">We calculate your true total cost — price plus shipping — so you always get the real cheapest deal.</div></div></div>
+    <div class="tip"><span class="tico">🔗</span><div><div class="thed">Direct buy links</div><div class="ttxt">Every result links straight to the product page — no middlemen, no redirects.</div></div></div>
+  </div>
+
+</div>
+
+<footer>
+  <div class="page" style="padding-bottom:0">
+    <p class="credit">✦ Inspired by <strong>Maggie Lewinsky</strong> ✦</p>
+  </div>
+</footer>
+
+<script>
+let b64 = null;
+
+const dz = document.getElementById('dz');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-on'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-on'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-on');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFile(f);
+});
+
+function loadFile(f) {
+  if (!f) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    resizeImage(dataUrl, 1200, 0.9, (base64Only, previewUrl) => {
+      b64 = base64Only;
+      document.getElementById('prevImg').src = previewUrl;
+      document.getElementById('prevTitle').textContent = f.name.replace(/\.[^.]+$/, '') || 'Your image';
+      document.getElementById('prevSec').classList.add('on');
+      document.getElementById('resultsSec').style.display = 'none';
+      document.getElementById('errBox').classList.remove('on');
+      document.getElementById('loadSec').classList.remove('on');
+      document.getElementById('tipsRow').style.display = 'none';
+    });
+  };
+  reader.readAsDataURL(f);
+}
+
+function resizeImage(dataUrl, maxSize, quality, cb) {
+  const img = new Image();
+  img.onload = () => {
+    let { width, height } = img;
+
+    if (width > height && width > maxSize) {
+      height = Math.round(height * (maxSize / width));
+      width = maxSize;
+    } else if (height > width && height > maxSize) {
+      width = Math.round(width * (maxSize / height));
+      height = maxSize;
+    } else if (width === height && width > maxSize) {
+      width = maxSize;
+      height = maxSize;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const out = canvas.toDataURL('image/jpeg', quality);
+    cb(out.split(',')[1], out);
+  };
+  img.src = dataUrl;
+}
+
+function reset() {
+  b64 = null;
+  document.getElementById('prevSec').classList.remove('on');
+  document.getElementById('resultsSec').style.display = 'none';
+  document.getElementById('resultsSec').innerHTML = '';
+  document.getElementById('errBox').classList.remove('on');
+  document.getElementById('errBox').textContent = '';
+  document.getElementById('loadSec').classList.remove('on');
+  document.getElementById('tipsRow').style.display = 'grid';
+  document.getElementById('fi').value = '';
+  document.getElementById('ci').value = '';
+}
+
+function setLoad(h, s) {
+  document.getElementById('lhed').textContent = h;
+  document.getElementById('lsub').textContent = s;
+}
+
+async function doSearch() {
+  if (!b64) return;
+
+  const btn = document.getElementById('findBtn');
+  btn.disabled = true;
+  document.getElementById('errBox').classList.remove('on');
+  document.getElementById('resultsSec').style.display = 'none';
+  document.getElementById('prevSec').classList.remove('on');
+  document.getElementById('loadSec').classList.add('on');
+  setLoad('Identifying your item…', 'AI vision is analyzing your photo ✦');
+
+  try {
+    const res = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: b64 })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data.error || `Search failed (${res.status})`);
+    }
+
+    document.getElementById('loadSec').classList.remove('on');
+    renderResults(data.item, data.results || []);
+  } catch (e) {
+    console.error(e);
+    const eb = document.getElementById('errBox');
+    eb.textContent = '⚠️ ' + (e.message || 'Something went wrong. Please try again.');
+    eb.classList.add('on');
+    document.getElementById('loadSec').classList.remove('on');
+    document.getElementById('prevSec').classList.add('on');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const icons = {
+  clothing:'👗',
+  shoes:'👠',
+  bag:'👜',
+  jewelry:'💍',
+  accessory:'✨',
+  home_decor:'🪴',
+  electronics:'📱',
+  beauty:'💄',
+  other:'🛍️'
+};
+
+function esc(str) {
+  return String(str ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderResults(item, results) {
+  results.sort((a, b) => (a.totalCost || a.price || 0) - (b.totalCost || b.price || 0));
+  const sec = document.getElementById('resultsSec');
+  const ico = icons[item?.category] || '🛍️';
+
+  let html = `
+    <div class="rtop">
+      <div class="rhed">✦ Cheapest Prices Found</div>
+      <div class="rbadge">${results.length} store${results.length !== 1 ? 's' : ''} searched</div>
+    </div>
+    <div class="idbar">
+      <span class="id-ico">${ico}</span>
+      <div>
+        <div class="id-lbl">Item identified</div>
+        <div class="id-name">${esc(item?.itemName || 'Unknown item')}</div>
+        <div class="id-desc">${esc(item?.description || '')}</div>
+      </div>
+    </div>`;
+
+  if (!results.length) {
+    html += `<div style="text-align:center;padding:52px 20px;color:var(--ink-muted)">
+      <div style="font-size:2.5rem;margin-bottom:14px">🔍</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:1.2rem;color:var(--ink);margin-bottom:8px">No listings found</div>
+      <p style="font-size:.85rem">Try a closer photo or better lighting so the item is clearly visible.</p>
+    </div>`;
+  } else {
+    html += `<div class="grid">`;
+    results.forEach((r, i) => {
+      const best = i === 0;
+      const price = Number(r.price || 0).toFixed(2);
+      const shippingNum = Number(r.shipping || 0);
+      const shipLine = shippingNum === 0
+        ? `<span class="cfree">Free shipping</span>`
+        : `+ $${shippingNum.toFixed(2)} shipping`;
+      const hasUrl = r.url && String(r.url).startsWith('http');
+
+      html += `
+        <div class="card${best ? ' top' : ''}">
+          ${best ? '<div class="bestpill">Best Deal</div>' : ''}
+          <div class="cstore">${esc(r.store || 'Store')}</div>
+          <div class="cname">${esc(r.productName || 'Unnamed product')}</div>
+          <div class="cnote">${esc(r.note || '')}</div>
+          <div class="cprice">$${price}</div>
+          <div class="cship">${shipLine}</div>
+          ${
+            hasUrl
+              ? `<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`
+              : `<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>`
+          }
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div style="text-align:center;margin-top:32px">
+    <button class="pill pg" type="button" onclick="reset()">📸 Search another item</button>
+  </div>`;
+
+  sec.innerHTML = html;
+  sec.style.display = 'block';
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>
