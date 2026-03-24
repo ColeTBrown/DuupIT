@@ -1,3 +1,51 @@
+function getResponseText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  if (Array.isArray(data?.output)) {
+    const parts = [];
+
+    for (const item of data.output) {
+      if (Array.isArray(item?.content)) {
+        for (const c of item.content) {
+          if (typeof c?.text === 'string' && c.text.trim()) {
+            parts.push(c.text);
+          }
+        }
+      }
+    }
+
+    return parts.join('\n').trim();
+  }
+
+  return '';
+}
+
+function extractJsonObject(text) {
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    const candidate = cleaned.slice(start, end + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {}
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -15,7 +63,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
     }
 
-    // STEP 1: identify the item from the image
+    // STEP 1: identify the item
     const visionRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -24,61 +72,22 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'identified_item',
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                itemName: { type: 'string' },
-                category: {
-                  type: 'string',
-                  enum: [
-                    'clothing',
-                    'shoes',
-                    'bag',
-                    'jewelry',
-                    'accessory',
-                    'home_decor',
-                    'electronics',
-                    'beauty',
-                    'other'
-                  ]
-                },
-                description: { type: 'string' },
-                keywords: {
-                  type: 'array',
-                  items: { type: 'string' }
-                },
-                estimatedPrice: {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    min: { type: 'number' },
-                    max: { type: 'number' }
-                  },
-                  required: ['min', 'max']
-                }
-              },
-              required: [
-                'itemName',
-                'category',
-                'description',
-                'keywords',
-                'estimatedPrice'
-              ]
-            }
-          }
-        },
         input: [
           {
             role: 'user',
             content: [
               {
                 type: 'input_text',
-                text: 'Identify the main product in this image. Be specific but concise.'
+                text: `Identify the MAIN product in this image.
+
+Return ONLY JSON in this exact shape:
+{
+  "itemName": "specific product name",
+  "category": "clothing|shoes|bag|jewelry|accessory|home_decor|electronics|beauty|other",
+  "description": "2 short sentences about color, style, material, and notable details",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "estimatedPrice": { "min": 20, "max": 120 }
+}`
               },
               {
                 type: 'input_image',
@@ -98,43 +107,35 @@ export default async function handler(req, res) {
       });
     }
 
-    const visionText = (visionData.output_text || '').trim();
+    const visionText = getResponseText(visionData);
+    const parsedItem = extractJsonObject(visionText);
 
-    let item;
-    try {
-      item = JSON.parse(visionText);
-    } catch {
-      const match = visionText.match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          item = JSON.parse(match[0]);
-        } catch {
-          return res.status(500).json({
-            error: 'Could not parse the item identification result'
-          });
-        }
-      } else {
-        return res.status(500).json({
-          error: 'Could not parse the item identification result'
-        });
-      }
+    if (!parsedItem) {
+      return res.status(500).json({
+        error: `Could not parse item identification result. Raw model output: ${visionText || 'empty response'}`
+      });
     }
 
-    // Safety cleanup
-    item = {
-      itemName: String(item.itemName || '').trim(),
-      category: String(item.category || 'other').trim(),
-      description: String(item.description || '').trim(),
-      keywords: Array.isArray(item.keywords)
-        ? item.keywords.map(k => String(k).trim()).filter(Boolean).slice(0, 6)
+    const item = {
+      itemName: String(parsedItem.itemName || '').trim(),
+      category: String(parsedItem.category || 'other').trim(),
+      description: String(parsedItem.description || '').trim(),
+      keywords: Array.isArray(parsedItem.keywords)
+        ? parsedItem.keywords.map(k => String(k).trim()).filter(Boolean).slice(0, 6)
         : [],
       estimatedPrice: {
-        min: Number(item.estimatedPrice?.min || 0),
-        max: Number(item.estimatedPrice?.max || 0)
+        min: Number(parsedItem?.estimatedPrice?.min || 0),
+        max: Number(parsedItem?.estimatedPrice?.max || 0)
       }
     };
 
-    // STEP 2: search for real product listings
+    if (!item.itemName) {
+      return res.status(500).json({
+        error: `Item identification came back incomplete. Raw model output: ${visionText || 'empty response'}`
+      });
+    }
+
+    // STEP 2: search for listings
     const searchRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -144,44 +145,6 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
         tools: [{ type: 'web_search' }],
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'shopping_results',
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                results: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    additionalProperties: false,
-                    properties: {
-                      store: { type: 'string' },
-                      productName: { type: 'string' },
-                      price: { type: 'number' },
-                      shipping: { type: 'number' },
-                      totalCost: { type: 'number' },
-                      url: { type: 'string' },
-                      note: { type: 'string' }
-                    },
-                    required: [
-                      'store',
-                      'productName',
-                      'price',
-                      'shipping',
-                      'totalCost',
-                      'url',
-                      'note'
-                    ]
-                  }
-                }
-              },
-              required: ['results']
-            }
-          }
-        },
         input: `Find 5 to 7 real current product listings for this item.
 
 Item: ${item.itemName}
@@ -190,16 +153,29 @@ Description: ${item.description}
 Keywords: ${item.keywords.join(', ')}
 Expected price range: $${item.estimatedPrice.min}-$${item.estimatedPrice.max}
 
-Search across major retailers and resale sites when relevant.
-
 Rules:
-- return real listings only
-- include direct product URLs only
-- include current price
+- real listings only
+- direct product URLs only
+- include price
 - include shipping when possible
 - if shipping is unknown, use 0 and explain that in note
-- totalCost should equal price + shipping
-- sort cheapest first`
+- include totalCost = price + shipping
+- sort cheapest first
+
+Return ONLY JSON in this exact shape:
+{
+  "results": [
+    {
+      "store": "Store name",
+      "productName": "Exact product title",
+      "price": 29.99,
+      "shipping": 0,
+      "totalCost": 29.99,
+      "url": "https://example.com/product",
+      "note": "Free returns · In stock"
+    }
+  ]
+}`
       })
     });
 
@@ -211,32 +187,17 @@ Rules:
       });
     }
 
-    const searchText = (searchData.output_text || '').trim();
+    const searchText = getResponseText(searchData);
+    const parsedResults = extractJsonObject(searchText);
 
-    let results = [];
-    try {
-      const parsed = JSON.parse(searchText);
-      results = Array.isArray(parsed.results) ? parsed.results : [];
-    } catch {
-      const match = searchText.match(/\{[\s\S]*"results"[\s\S]*\}/);
-      if (match) {
-        try {
-          const parsed = JSON.parse(match[0]);
-          results = Array.isArray(parsed.results) ? parsed.results : [];
-        } catch {
-          results = [];
-        }
-      }
-    }
+    let results = Array.isArray(parsedResults?.results) ? parsedResults.results : [];
 
     results = results
       .filter(r => r && r.productName && r.store)
       .map(r => {
         const price = Number(r.price || 0);
         const shipping = Number(r.shipping || 0);
-        const totalCost = Number(
-          r.totalCost ?? (price + shipping)
-        );
+        const totalCost = Number(r.totalCost ?? (price + shipping));
 
         return {
           store: String(r.store || '').trim(),
