@@ -44,13 +44,23 @@ async function trackSearch(itemName, category) {
     if (!url || !token) return;
     const key = itemName.toLowerCase().trim().replace(/\s+/g, '_').slice(0, 60);
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-    await fetch(`${url}/hincrby/search_counts/${encodeURIComponent(key)}/1`, { method: 'POST', headers });
-    const existing = await fetch(`${url}/hget/item_meta/${encodeURIComponent(key)}`, { headers });
-    const ed = await existing.json().catch(() => ({}));
-    if (!ed.result) {
-      await fetch(`${url}/hset/item_meta`, {
+
+    // Upstash REST API uses POST with command array format
+    await fetch(url, {
+      method: 'POST', headers,
+      body: JSON.stringify(['HINCRBY', 'search_counts', key, '1'])
+    });
+
+    // Check if meta exists then set it
+    const existRes = await fetch(url, {
+      method: 'POST', headers,
+      body: JSON.stringify(['HEXISTS', 'item_meta', key])
+    });
+    const existData = await existRes.json().catch(() => ({}));
+    if (!existData.result) {
+      await fetch(url, {
         method: 'POST', headers,
-        body: JSON.stringify([key, JSON.stringify({ name: itemName, category })])
+        body: JSON.stringify(['HSET', 'item_meta', key, JSON.stringify({ name: itemName, category })])
       });
     }
   } catch (e) { console.error('KV error (non-fatal):', e); }
