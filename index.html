@@ -154,6 +154,16 @@ textarea.opt-input{resize:none;min-height:64px;line-height:1.5}
 .card.top .cbtn{background:var(--wine);color:var(--white);border-color:var(--wine)}
 .card.top .cbtn:hover{background:var(--ink);border-color:var(--ink)}
 
+/* Result tabs (exact / dupes) */
+.rtabs{display:flex;gap:0;background:var(--white);border-radius:100px;border:1.5px solid var(--border-s);padding:4px;margin-bottom:24px;width:fit-content}
+.rtab{font-family:'Jost',sans-serif;font-size:.85rem;font-weight:500;letter-spacing:.04em;padding:10px 22px;border-radius:100px;border:none;cursor:pointer;transition:all .25s ease;color:var(--ink-muted);background:transparent;display:flex;align-items:center;gap:7px}
+.rtab.active{background:var(--wine);color:var(--white);box-shadow:0 4px 14px rgba(139,58,90,.3)}
+.rtab:not(.active):hover{color:var(--wine);background:var(--petal-pale)}
+.rtab-count{font-size:.72rem;background:rgba(255,255,255,.25);padding:2px 7px;border-radius:100px;font-weight:600}
+.rtab:not(.active) .rtab-count{background:var(--petal-mid);color:var(--wine)}
+.rpanel{display:none}.rpanel.active{display:block}
+.rpanel-sub{font-size:.82rem;color:var(--ink-muted);margin-bottom:18px;font-style:italic}
+
 /* Popular tab */
 .pop-header{text-align:center;padding:20px 0 36px}
 .pop-hed{font-family:'Cormorant Garamond',serif;font-size:2.2rem;font-weight:300;color:var(--ink);margin-bottom:8px}
@@ -604,7 +614,8 @@ async function doSearch() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Search failed (${res.status})`);
     document.getElementById('loadSec').classList.remove('on');
-    renderResults(data.item, data.results || []);
+    renderResults(data.item, data.exactResults || [], data.dupeResults || []);
+
   } catch (e) {
     document.getElementById('errBox').textContent = '⚠️ ' + (e.message || 'Something went wrong. Please try again.');
     document.getElementById('errBox').classList.add('on');
@@ -623,45 +634,86 @@ function esc(str) {
   return String(str ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 }
 
-function renderResults(item, results) {
-  results.sort((a,b) => (a.totalCost||a.price||0)-(b.totalCost||b.price||0));
+function switchResultTab(name) {
+  document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.rpanel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+}
+
+function buildCard(r, i, ico, labelBadge) {
+  const best = i === 0;
+  const price = Number(r.price || 0);
+  const priceStr = price > 0 ? `$${price.toFixed(2)}` : 'See site';
+  const hasUrl = r.url?.startsWith('http');
+  const hasImg = r.imageUrl?.startsWith('http');
+  return `<div class="card${best ? ' top' : ''}">
+    ${best ? `<div class="bestpill">${labelBadge}</div>` : ''}
+    <div class="card-img-wrap">${hasImg
+      ? `<img class="card-img" src="${esc(r.imageUrl)}" alt="${esc(r.productName)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'card-img-placeholder\\'>${ico}</div>'">`
+      : `<div class="card-img-placeholder">${ico}</div>`}</div>
+    <div class="card-body">
+      <div class="cstore">${esc(r.store || 'Shop')}</div>
+      <div class="cname">${esc(r.productName || 'Product')}</div>
+      <div class="cnote">${esc(r.note || '')}</div>
+      <div class="cprice">${priceStr}</div>
+      ${hasUrl
+        ? `<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`
+        : `<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>`}
+    </div></div>`;
+}
+
+function buildGrid(results, ico, emptyMsg, labelBadge) {
+  if (!results.length) {
+    return `<div style="text-align:center;padding:48px 20px;color:var(--ink-muted)">
+      <div style="font-size:2.2rem;margin-bottom:12px">🔍</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;color:var(--ink);margin-bottom:6px">${emptyMsg}</div>
+    </div>`;
+  }
+  return `<div class="grid">${results.map((r, i) => buildCard(r, i, ico, labelBadge)).join('')}</div>`;
+}
+
+function renderResults(item, exactResults, dupeResults) {
+  exactResults.sort((a, b) => (a.totalCost || 0) - (b.totalCost || 0));
+  dupeResults.sort((a, b) => (a.totalCost || 0) - (b.totalCost || 0));
+
   const sec = document.getElementById('resultsSec');
   const ico = icons[item?.category] || '🛍️';
 
-  let html = `<div class="rtop"><div class="rhed">✦ Cheapest Prices Found</div><div class="rbadge">${results.length} store${results.length!==1?'s':''} searched</div></div>
-    <div class="idbar"><span class="id-ico">${ico}</span><div><div class="id-lbl">Item identified</div><div class="id-name">${esc(item?.itemName||'Unknown item')}</div><div class="id-desc">${esc(item?.description||'')}</div></div></div>`;
+  const html = `
+    <div class="idbar">
+      <span class="id-ico">${ico}</span>
+      <div>
+        <div class="id-lbl">Item identified</div>
+        <div class="id-name">${esc(item?.itemName || 'Unknown item')}</div>
+        <div class="id-desc">${esc(item?.description || '')}</div>
+      </div>
+    </div>
 
-  if (!results.length) {
-    html += `<div style="text-align:center;padding:52px 20px;color:var(--ink-muted)"><div style="font-size:2.5rem;margin-bottom:14px">🔍</div><div style="font-family:'Cormorant Garamond',serif;font-size:1.2rem;color:var(--ink);margin-bottom:8px">No listings found</div><p style="font-size:.85rem">Try a closer photo or better lighting.</p></div>`;
-  } else {
-    html += '<div class="grid">';
-    results.forEach((r, i) => {
-      const best = i === 0;
-      const price = Number(r.price||0).toFixed(2);
-      const ship = Number(r.shipping||0);
-      const shipLine = ship === 0 ? '<span class="cfree">Free shipping</span>' : `+ $${ship.toFixed(2)} shipping`;
-      const hasUrl = r.url?.startsWith('http');
-      const hasImg = r.imageUrl?.startsWith('http');
-      html += `<div class="card${best?' top':''}">
-        ${best?'<div class="bestpill">Best Deal</div>':''}
-        <div class="card-img-wrap">${hasImg
-          ? `<img class="card-img" src="${esc(r.imageUrl)}" alt="${esc(r.productName)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'card-img-placeholder\\'>${ico}</div>'">`
-          : `<div class="card-img-placeholder">${ico}</div>`}</div>
-        <div class="card-body">
-          <div class="cstore">${esc(r.store||'Store')}</div>
-          <div class="cname">${esc(r.productName||'Unnamed product')}</div>
-          <div class="cnote">${esc(r.note||'')}</div>
-          <div class="cprice">$${price}</div>
-          <div class="cship">${shipLine}</div>
-          ${hasUrl?`<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`:'<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>'}
-        </div></div>`;
-    });
-    html += '</div>';
-  }
-  html += `<div style="text-align:center;margin-top:32px"><button class="pill pg" onclick="reset()">📸 Search another item</button></div>`;
+    <div class="rtabs">
+      <button class="rtab active" data-tab="exact" onclick="switchResultTab('exact')">
+        🎯 Exact Match <span class="rtab-count">${exactResults.length}</span>
+      </button>
+      <button class="rtab" data-tab="dupes" onclick="switchResultTab('dupes')">
+        💸 Cheaper Dupes <span class="rtab-count">${dupeResults.length}</span>
+      </button>
+    </div>
+
+    <div class="rpanel active" data-panel="exact">
+      <div class="rpanel-sub">Searching for the exact product from the photo</div>
+      ${buildGrid(exactResults, ico, 'No exact matches found — try the Dupes tab', 'Best Price')}
+    </div>
+
+    <div class="rpanel" data-panel="dupes">
+      <div class="rpanel-sub">Similar style at a lower price point</div>
+      ${buildGrid(dupeResults, ico, 'No dupes found — try adding more details', 'Best Dupe')}
+    </div>
+
+    <div style="text-align:center;margin-top:32px">
+      <button class="pill pg" onclick="reset()">📸 Search another item</button>
+    </div>`;
+
   sec.innerHTML = html;
   sec.style.display = 'block';
-  sec.scrollIntoView({ behavior:'smooth', block:'start' });
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Popular ────────────────────────────────────────────────────────────────────
