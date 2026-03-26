@@ -23,19 +23,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ items: FALLBACK_TRENDING, source: 'fallback' });
     }
 
-    const headers = { Authorization: `Bearer ${kvToken}` };
+    const headers = { Authorization: `Bearer ${kvToken}`, 'Content-Type': 'application/json' };
 
-    // Fetch counts and metadata in parallel
+    // Fetch counts and metadata using Upstash REST API command format
     const [countsRes, metasRes] = await Promise.all([
-      fetch(`${kvUrl}/hgetall/search_counts`, { headers }),
-      fetch(`${kvUrl}/hgetall/item_meta`, { headers })
+      fetch(kvUrl, { method: 'POST', headers, body: JSON.stringify(['HGETALL', 'search_counts']) }),
+      fetch(kvUrl, { method: 'POST', headers, body: JSON.stringify(['HGETALL', 'item_meta']) })
     ]);
 
     const countsData = await countsRes.json().catch(() => ({}));
     const metasData = await metasRes.json().catch(() => ({}));
 
-    const counts = countsData.result;
-    const metas = metasData.result;
+    // Upstash HGETALL returns a flat array [key, val, key, val, ...]
+    // Convert to object
+    const toObject = (arr) => {
+      if (!Array.isArray(arr)) return null;
+      const obj = {};
+      for (let i = 0; i < arr.length; i += 2) obj[arr[i]] = arr[i + 1];
+      return obj;
+    };
+
+    const counts = toObject(countsData.result);
+    const metas = toObject(metasData.result);
 
     // No real searches yet — return fallback
     if (!counts || Object.keys(counts).length === 0) {
