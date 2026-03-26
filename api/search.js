@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageBase64 } = req.body || {};
+    const { imageBase64, size, details } = req.body || {};
 
     if (!imageBase64) {
       return res.status(400).json({ error: 'Missing imageBase64' });
@@ -139,6 +139,10 @@ clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other
       });
     }
 
+    // Build optional size/details context for the search prompt
+    const sizeClause = size ? `\nSize needed: ${size} — only include listings available in this size.` : '';
+    const detailsClause = details ? `\nAdditional user preferences: ${details}` : '';
+
     // Step 2: search listings
     const searchRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -155,15 +159,15 @@ Item: ${item.itemName}
 Category: ${item.category}
 Description: ${item.description}
 Keywords: ${item.keywords.join(', ')}
-Expected price range: $${item.estimatedPrice.min}-$${item.estimatedPrice.max}
+Expected price range: $${item.estimatedPrice.min}-$${item.estimatedPrice.max}${sizeClause}${detailsClause}
 
 Rules:
 - real listings only
 - direct product URLs only
 - include price
-- include shipping when possible
-- if shipping is unknown, use 0 and mention that in note
+- include shipping when possible; if unknown use 0 and note it
 - include totalCost = price + shipping
+- try to include a direct image URL for the product (imageUrl) — use the main product photo from the listing page if available, otherwise omit
 - sort cheapest first
 
 Return ONLY valid JSON in this format:
@@ -176,6 +180,7 @@ Return ONLY valid JSON in this format:
       "shipping": 0,
       "totalCost": 29.99,
       "url": "https://example.com/product",
+      "imageUrl": "https://example.com/product-image.jpg",
       "note": "Free returns · In stock"
     }
   ]
@@ -202,6 +207,7 @@ Return ONLY valid JSON in this format:
         const price = Number(r.price || 0);
         const shipping = Number(r.shipping || 0);
         const totalCost = Number(r.totalCost ?? (price + shipping));
+        const imageUrl = String(r.imageUrl || '').trim();
 
         return {
           store: String(r.store || '').trim(),
@@ -210,6 +216,7 @@ Return ONLY valid JSON in this format:
           shipping,
           totalCost,
           url: String(r.url || '').trim(),
+          imageUrl: imageUrl.startsWith('http') ? imageUrl : '',
           note: String(r.note || '').trim()
         };
       })
