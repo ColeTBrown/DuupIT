@@ -1,19 +1,3 @@
-function getResponseText(data) {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
-  if (Array.isArray(data?.output)) {
-    const texts = [];
-    for (const item of data.output) {
-      if (Array.isArray(item?.content)) {
-        for (const part of item.content) {
-          if (typeof part?.text === 'string' && part.text.trim()) texts.push(part.text.trim());
-        }
-      }
-    }
-    if (texts.length) return texts.join('\n');
-  }
-  return '';
-}
-
 function tryParseJson(text) {
   if (!text) return null;
   const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -23,20 +7,28 @@ function tryParseJson(text) {
   return null;
 }
 
-// Validate a URL looks like a real product page (not a search/category/blog page)
 function isLikelyProductUrl(url) {
   if (!url || !url.startsWith('http')) return false;
   const bad = [
     '/search', '/s?', '?q=', '/category', '/categories', '/c/',
-    '/collections', '/browse', '/listing?', 'google.com', 'bing.com',
+    '/collections?', '/browse', 'google.com', 'bing.com',
     'pinterest.com', 'instagram.com', 'youtube.com', 'tiktok.com',
-    'reddit.com', 'wikipedia.org', 'facebook.com', 'twitter.com',
+    'reddit.com', 'wikipedia.org', 'facebook.com', 'twitter.com', 'x.com',
     '/blog/', '/news/', '/article', '/guide', '/how-to'
   ];
   return !bad.some(s => url.toLowerCase().includes(s));
 }
 
-// Track search using Vercel KV REST API directly — no npm package needed
+// Extract text from Anthropic response content blocks
+function extractText(content) {
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter(b => b.type === 'text')
+    .map(b => b.text || '')
+    .join('\n')
+    .trim();
+}
+
 async function trackSearch(itemName, category) {
   try {
     const url = process.env.KV_REST_API_URL;
@@ -58,22 +50,61 @@ async function trackSearch(itemName, category) {
   }
 }
 
-// Run one search pass with web_search tool, with strict instructions
-async function runSearch(apiKey, systemPrompt, userPrompt) {
-  const res = await fetch('https://api.openai.com/v1/responses', {
+// Call Anthropic API with web search enabled
+async function claudeSearch(anthropicKey, userPrompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01'
+    },
     body: JSON.stringify({
-      model: 'gpt-4.1',
-      tools: [{ type: 'web_search_preview' }],
-      tool_choice: { type: 'web_search_preview' },
-      instructions: systemPrompt,
-      input: userPrompt
+      model: 'claude-sonnet-4-5',
+      max_tokens: 2048,
+      tools: [{
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: 5
+      }],
+      messages: [{ role: 'user', content: userPrompt }]
     })
   });
+
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `Search request failed (${res.status})`);
-  return getResponseText(data);
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `Anthropic API error (${res.status})`);
+  }
+  return extractText(data.content);
+}
+
+// Call Anthropic API for vision (no web search needed)
+async function claudeVision(anthropicKey, imageBase64, prompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `Anthropic vision error (${res.status})`);
+  }
+  return extractText(data.content);
 }
 
 export default async function handler(req, res) {
@@ -83,45 +114,26 @@ export default async function handler(req, res) {
     const { imageBase64, size, details } = req.body || {};
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY — add it in Vercel environment variables' });
 
     // ── Step 1: Vision — identify the item ────────────────────────────────────
-    const visionRes = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'gpt-4.1',
-        input: [{
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: `You are an expert fashion and product analyst. Study this image carefully.
-If any area is circled, highlighted, or annotated, focus ONLY on that specific item — ignore everything else.
+    const visionText = await claudeVision(anthropicKey, imageBase64, `You are an expert fashion and product analyst. Study this image carefully.
+If any area is circled, highlighted, or annotated, focus ONLY on that specific item — ignore everything else in the image.
 
-Return ONLY a valid JSON object, no other text:
+Return ONLY a valid JSON object — no other text, no markdown:
 {
-  "itemName": "Complete descriptive product name. Include brand if visible, color, material, and style. Be specific.",
+  "itemName": "Complete product name. Include brand if visible, color, material, style. Be very specific.",
   "brand": "Brand name if clearly visible in the image, otherwise empty string",
   "category": "one of: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other",
   "description": "Detailed visual description: color, material, cut, fit, distinguishing features, any visible logos or hardware",
-  "exactSearchQuery": "A precise search query to find THIS EXACT product for sale online. If brand is known, lead with it. Include color, style name, model if visible. End with 'buy online'.",
-  "dupeSearchQuery": "A search query to find CHEAPER SIMILAR alternatives. Describe the style and look WITHOUT any brand names. Focus on visual characteristics, silhouette, material, color. End with 'affordable'.",
+  "exactSearchQuery": "Precise search query to find THIS EXACT product for sale online. If brand is known, lead with it. Include color, style, model name if visible.",
+  "dupeSearchQuery": "Search query to find CHEAPER SIMILAR alternatives. Describe the style WITHOUT any brand names. Focus on visual look, silhouette, color, material.",
   "estimatedPrice": { "min": 0, "max": 0 }
-}`
-            },
-            { type: 'input_image', image_url: `data:image/jpeg;base64,${imageBase64}` }
-          ]
-        }]
-      })
-    });
+}`);
 
-    const visionData = await visionRes.json().catch(() => ({}));
-    if (!visionRes.ok) return res.status(500).json({ error: visionData?.error?.message || `Vision failed (${visionRes.status})` });
-
-    const parsedItem = tryParseJson(getResponseText(visionData));
-    if (!parsedItem?.itemName) return res.status(500).json({ error: 'Could not identify item. Try a clearer photo with better lighting.' });
+    const parsedItem = tryParseJson(visionText);
+    if (!parsedItem?.itemName) return res.status(500).json({ error: 'Could not identify item. Try a clearer photo.' });
 
     const item = {
       itemName: String(parsedItem.itemName).trim(),
@@ -137,81 +149,80 @@ Return ONLY a valid JSON object, no other text:
     };
 
     const sizeSuffix = size ? ` in size ${size}` : '';
-    const detailsSuffix = details ? `. Additional requirements: ${details}` : '';
+    const detailsSuffix = details ? `. Extra requirements: ${details}` : '';
+    const maxPrice = item.estimatedPrice.max || 150;
 
-    const sharedSystem = `You are a shopping assistant that finds REAL, VERIFIABLE product listings.
+    // ── Step 2: Exact + dupe searches in parallel ─────────────────────────────
+    const exactPrompt = `Search the web for places to buy: "${item.exactSearchQuery}${sizeSuffix}${detailsSuffix}"
 
-CRITICAL RULES — failure to follow these makes your response useless:
-1. Every URL you return MUST be a real, working, direct product page URL that you have confirmed exists via web search
-2. NEVER invent, guess, or construct URLs — only return URLs you have actually seen in search results
-3. NEVER return search page URLs (like amazon.com/s?k=...) — only direct product listing pages
-4. Only return products that are currently in stock and available to buy
-5. Include the real price shown on the page
-6. Return ONLY the JSON object — no explanation, no markdown, no other text`;
+Use web search to find 4-5 real current listings where someone can buy this exact item right now. Check multiple retailers.
 
-    const exactPrompt = `Search the web right now for: "${item.exactSearchQuery}${sizeSuffix}${detailsSuffix}"
-
-Find 4-5 real product listings where someone can buy this item today. Visit the actual pages to confirm they exist.
-
-Return ONLY this JSON:
+Return ONLY this JSON — no other text:
 {
   "results": [
     {
-      "store": "retailer name",
-      "productName": "exact product title from the page",
+      "store": "Retailer name",
+      "productName": "Exact product title from the page",
       "price": 49.99,
-      "url": "https://actual-product-page-url.com/product/...",
-      "note": "any useful info like shipping, returns, in stock status"
+      "url": "https://direct-product-page-url",
+      "note": "shipping info, return policy, availability"
     }
   ]
-}`;
+}
 
-    const dupePrompt = `Search the web right now for: "${item.dupeSearchQuery}${sizeSuffix}${detailsSuffix}"
+Rules:
+- Only URLs to actual product pages (not search results pages)
+- Only currently available/in-stock items
+- Include the real price shown on the listing
+- Sort cheapest first`;
 
-Find 4-6 real cheaper alternative products — similar style but lower price than $${item.estimatedPrice.max || 100}. Visit the actual pages to confirm they exist. Do NOT include ${item.brand ? `"${item.brand}" brand or` : ''} search page URLs.
+    const dupePrompt = `Search the web for cheaper alternatives to: "${item.dupeSearchQuery}${sizeSuffix}${detailsSuffix}"
 
-Return ONLY this JSON:
+Use web search to find 4-6 affordable similar products under $${Math.round(maxPrice * 0.6)}. These should look similar but cost less${item.brand ? ` — do NOT include ${item.brand} brand products` : ''}.
+
+Return ONLY this JSON — no other text:
 {
   "results": [
     {
-      "store": "retailer name",
-      "productName": "exact product title from the page",
+      "store": "Retailer name",
+      "productName": "Exact product title from the page",
       "price": 24.99,
-      "url": "https://actual-product-page-url.com/product/...",
-      "note": "any useful info like shipping, returns, similarity to original"
+      "url": "https://direct-product-page-url",
+      "note": "why it's a good dupe, shipping info"
     }
   ]
-}`;
+}
 
-    // ── Step 2: Run exact + dupe searches in parallel ─────────────────────────
+Rules:
+- Only URLs to actual product pages (not search results pages)
+- Only currently available/in-stock items
+- Include the real price shown on the listing
+- Sort cheapest first`;
+
     const [exactText, dupeText] = await Promise.all([
-      runSearch(apiKey, sharedSystem, exactPrompt),
-      runSearch(apiKey, sharedSystem, dupePrompt)
+      claudeSearch(anthropicKey, exactPrompt),
+      claudeSearch(anthropicKey, dupePrompt)
     ]);
-
-    const exactParsed = tryParseJson(exactText);
-    const dupeParsed = tryParseJson(dupeText);
 
     const cleanResults = (raw) =>
       (Array.isArray(raw?.results) ? raw.results : [])
-        .filter(r => r?.productName && r?.store && isLikelyProductUrl(r.url))
+        .filter(r => r?.productName && r?.store && isLikelyProductUrl(r?.url))
         .map(r => ({
           store: String(r.store).trim(),
           productName: String(r.productName).trim(),
           price: parseFloat(String(r.price || '0').replace(/[^0-9.]/g, '')) || 0,
           shipping: 0,
           totalCost: parseFloat(String(r.price || '0').replace(/[^0-9.]/g, '')) || 0,
-          url: String(r.url).trim(),
+          url: String(r.url || '').trim(),
           imageUrl: '',
           note: String(r.note || '').trim()
         }))
         .sort((a, b) => a.totalCost - b.totalCost)
         .slice(0, 6);
 
-    const exactResults = cleanResults(exactParsed);
-    const dupeResults = cleanResults(dupeParsed);
+    const exactResults = cleanResults(tryParseJson(exactText));
+    const dupeResults = cleanResults(tryParseJson(dupeText));
 
-    // Track non-blocking
     trackSearch(item.itemName, item.category);
 
     return res.status(200).json({ item, exactResults, dupeResults });
