@@ -47,6 +47,59 @@ function tryParseJson(text) {
   return null;
 }
 
+// Fetch the og:image (or twitter:image) from a product page
+async function fetchProductImage(url) {
+  if (!url || !url.startsWith('http')) return '';
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return '';
+
+    // Only read first 50KB — enough to get <head> meta tags
+    const reader = res.body.getReader();
+    let html = '';
+    let bytesRead = 0;
+    const maxBytes = 50000;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += new TextDecoder().decode(value);
+      bytesRead += value.length;
+      if (bytesRead >= maxBytes) {
+        reader.cancel();
+        break;
+      }
+    }
+
+    // Try og:image first
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1] && ogMatch[1].startsWith('http')) return ogMatch[1];
+
+    // Fallback: twitter:image
+    const twMatch = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+    if (twMatch?.[1] && twMatch[1].startsWith('http')) return twMatch[1];
+
+    return '';
+  } catch {
+    return '';
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -163,11 +216,10 @@ Expected price range: $${item.estimatedPrice.min}-$${item.estimatedPrice.max}${s
 
 Rules:
 - real listings only
-- direct product URLs only
+- direct product page URLs only (not search pages)
 - include price
 - include shipping when possible; if unknown use 0 and note it
 - include totalCost = price + shipping
-- try to include a direct image URL for the product (imageUrl) — use the main product photo from the listing page if available, otherwise omit
 - sort cheapest first
 
 Return ONLY valid JSON in this format:
@@ -180,7 +232,6 @@ Return ONLY valid JSON in this format:
       "shipping": 0,
       "totalCost": 29.99,
       "url": "https://example.com/product",
-      "imageUrl": "https://example.com/product-image.jpg",
       "note": "Free returns · In stock"
     }
   ]
@@ -207,7 +258,6 @@ Return ONLY valid JSON in this format:
         const price = Number(r.price || 0);
         const shipping = Number(r.shipping || 0);
         const totalCost = Number(r.totalCost ?? (price + shipping));
-        const imageUrl = String(r.imageUrl || '').trim();
 
         return {
           store: String(r.store || '').trim(),
@@ -216,12 +266,21 @@ Return ONLY valid JSON in this format:
           shipping,
           totalCost,
           url: String(r.url || '').trim(),
-          imageUrl: imageUrl.startsWith('http') ? imageUrl : '',
+          imageUrl: '',
           note: String(r.note || '').trim()
         };
       })
       .sort((a, b) => a.totalCost - b.totalCost)
       .slice(0, 7);
+
+    // Step 3: fetch real product images in parallel by scraping og:image from each listing page
+    await Promise.all(
+      results.map(async (r) => {
+        if (r.url && r.url.startsWith('http')) {
+          r.imageUrl = await fetchProductImage(r.url);
+        }
+      })
+    );
 
     return res.status(200).json({ item, results });
   } catch (error) {
