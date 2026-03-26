@@ -58,6 +58,17 @@ header{padding:60px 0 44px;text-align:center;animation:rise .9s cubic-bezier(.16
 .pmeta{flex:1;min-width:180px;padding-top:4px}
 .pey{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--wine-light);font-weight:500;margin-bottom:8px}
 .ptitle{font-family:'Cormorant Garamond',serif;font-size:1.3rem;color:var(--ink);margin-bottom:16px;font-weight:400}
+
+/* Search options (size + details) */
+.search-opts{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.opt-row{display:flex;gap:12px;flex-wrap:wrap}
+.opt-group{display:flex;flex-direction:column;gap:5px;flex:1;min-width:140px}
+.opt-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--wine-light);font-weight:600}
+.opt-input{background:var(--petal-pale);border:1.5px solid var(--border-s);border-radius:10px;padding:9px 14px;font-family:'Jost',sans-serif;font-size:.85rem;color:var(--ink);outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+.opt-input:focus{border-color:var(--petal-deep);box-shadow:0 0 0 3px rgba(232,135,159,.12)}
+.opt-input::placeholder{color:var(--ink-muted)}
+textarea.opt-input{resize:none;min-height:68px;line-height:1.5}
+
 .bfind{background:linear-gradient(135deg,var(--wine) 0%,var(--petal-deep) 100%);color:var(--white);border:none;padding:14px 30px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.9rem;font-weight:500;cursor:pointer;letter-spacing:.04em;box-shadow:0 8px 24px rgba(139,58,90,.35);transition:all .3s ease;display:inline-flex;align-items:center;gap:8px}
 .bfind:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(139,58,90,.4)}
 .bfind:disabled{opacity:.55;cursor:not-allowed;transform:none}
@@ -88,19 +99,27 @@ header{padding:60px 0 44px;text-align:center;animation:rise .9s cubic-bezier(.16
 .id-desc{font-size:.8rem;color:var(--ink-soft);margin-top:3px;line-height:1.5}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:18px}
-.card{background:var(--white);border-radius:22px;border:1px solid var(--border);padding:22px;display:flex;flex-direction:column;box-shadow:0 4px 20px rgba(139,58,90,.05);transition:all .3s ease;position:relative;overflow:hidden;animation:rise .5s ease both}
-.card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--petal-deep),var(--wine));opacity:0;transition:opacity .3s}
+.card{background:var(--white);border-radius:22px;border:1px solid var(--border);padding:0;display:flex;flex-direction:column;box-shadow:0 4px 20px rgba(139,58,90,.05);transition:all .3s ease;position:relative;overflow:hidden;animation:rise .5s ease both}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--petal-deep),var(--wine));opacity:0;transition:opacity .3s;z-index:1}
 .card:hover{transform:translateY(-5px);box-shadow:0 16px 50px rgba(139,58,90,.13)}
 .card:hover::after,.card.top::after{opacity:1}
 .card.top{border-color:var(--petal-deep)}
-.bestpill{position:absolute;top:14px;right:14px;background:var(--wine);color:var(--white);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:100px}
+.bestpill{position:absolute;top:14px;right:14px;background:var(--wine);color:var(--white);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:100px;z-index:2}
+
+/* Product image on card */
+.card-img-wrap{width:100%;aspect-ratio:1/1;overflow:hidden;background:var(--petal-pale);position:relative;flex-shrink:0}
+.card-img{width:100%;height:100%;object-fit:cover;transition:transform .4s ease;display:block}
+.card:hover .card-img{transform:scale(1.04)}
+.card-img-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--petal-deep);background:var(--petal-pale)}
+
+.card-body{padding:18px 20px 20px;display:flex;flex-direction:column;flex:1}
 .cstore{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--wine-light);margin-bottom:8px}
 .cname{font-family:'Cormorant Garamond',serif;font-size:1.05rem;color:var(--ink);line-height:1.4;margin-bottom:6px;flex:1}
 .cnote{font-size:.78rem;color:var(--ink-muted);margin-bottom:14px;line-height:1.5}
 .cprice{font-family:'Cormorant Garamond',serif;font-size:1.8rem;font-weight:600;color:var(--wine);margin-bottom:4px}
 .cship{font-size:.78rem;color:var(--ink-muted);margin-bottom:14px}
 .cfree{color:#3d8f5f;font-weight:600}
-.cbtn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.82rem;font-weight:500;letter-spacing:.04em;cursor:pointer;text-decoration:none;border:1.5px solid var(--petal-deep);background:var(--petal-pale);color:var(--wine);transition:all .25s ease}
+.cbtn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.82rem;font-weight:500;letter-spacing:.04em;cursor:pointer;text-decoration:none;border:1.5px solid var(--petal-deep);background:var(--petal-pale);color:var(--wine);transition:all .25s ease;margin-top:auto}
 .cbtn:hover{background:var(--wine);color:var(--white);border-color:var(--wine)}
 .card.top .cbtn{background:var(--wine);color:var(--white);border-color:var(--wine)}
 .card.top .cbtn:hover{background:var(--ink);border-color:var(--ink)}
@@ -127,6 +146,7 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
   .pthumb{width:110px;height:110px}
   .grid{grid-template-columns:1fr}
   header{padding:40px 0 32px}
+  .opt-row{flex-direction:column}
 }
 </style>
 </head>
@@ -168,6 +188,21 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
       <div class="pmeta">
         <div class="pey">Photo ready ✦</div>
         <div class="ptitle" id="prevTitle">Your image</div>
+
+        <!-- Size + Details inputs -->
+        <div class="search-opts">
+          <div class="opt-row">
+            <div class="opt-group">
+              <label class="opt-label" for="sizeInput">Your Size</label>
+              <input class="opt-input" id="sizeInput" type="text" placeholder="e.g. S, M, 8, 32W, EU 40…" maxlength="20"/>
+            </div>
+          </div>
+          <div class="opt-group">
+            <label class="opt-label" for="detailsInput">Extra Details</label>
+            <textarea class="opt-input" id="detailsInput" placeholder="e.g. prefer black, need petite fit, budget under $50, similar style OK…" maxlength="300"></textarea>
+          </div>
+        </div>
+
         <button class="bfind" id="findBtn" type="button" onclick="doSearch()">✦ Find Cheapest Prices</button>
         <br/>
         <button class="breset" type="button" onclick="reset()">↩ Change photo</button>
@@ -272,6 +307,8 @@ function reset() {
   document.getElementById('tipsRow').style.display = 'grid';
   document.getElementById('fi').value = '';
   document.getElementById('ci').value = '';
+  document.getElementById('sizeInput').value = '';
+  document.getElementById('detailsInput').value = '';
 }
 
 function setLoad(h, s) {
@@ -281,6 +318,9 @@ function setLoad(h, s) {
 
 async function doSearch() {
   if (!b64) return;
+
+  const size = document.getElementById('sizeInput').value.trim();
+  const details = document.getElementById('detailsInput').value.trim();
 
   const btn = document.getElementById('findBtn');
   btn.disabled = true;
@@ -294,7 +334,7 @@ async function doSearch() {
     const res = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: b64 })
+      body: JSON.stringify({ imageBase64: b64, size, details })
     });
 
     const data = await res.json().catch(() => ({}));
@@ -373,20 +413,29 @@ function renderResults(item, results) {
         ? `<span class="cfree">Free shipping</span>`
         : `+ $${shippingNum.toFixed(2)} shipping`;
       const hasUrl = r.url && String(r.url).startsWith('http');
+      const hasImg = r.imageUrl && String(r.imageUrl).startsWith('http');
 
       html += `
         <div class="card${best ? ' top' : ''}">
           ${best ? '<div class="bestpill">Best Deal</div>' : ''}
-          <div class="cstore">${esc(r.store || 'Store')}</div>
-          <div class="cname">${esc(r.productName || 'Unnamed product')}</div>
-          <div class="cnote">${esc(r.note || '')}</div>
-          <div class="cprice">$${price}</div>
-          <div class="cship">${shipLine}</div>
-          ${
-            hasUrl
-              ? `<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`
-              : `<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>`
-          }
+          <div class="card-img-wrap">
+            ${hasImg
+              ? `<img class="card-img" src="${esc(r.imageUrl)}" alt="${esc(r.productName)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'card-img-placeholder\\'>${ico}</div>'">`
+              : `<div class="card-img-placeholder">${ico}</div>`
+            }
+          </div>
+          <div class="card-body">
+            <div class="cstore">${esc(r.store || 'Store')}</div>
+            <div class="cname">${esc(r.productName || 'Unnamed product')}</div>
+            <div class="cnote">${esc(r.note || '')}</div>
+            <div class="cprice">$${price}</div>
+            <div class="cship">${shipLine}</div>
+            ${
+              hasUrl
+                ? `<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`
+                : `<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>`
+            }
+          </div>
         </div>`;
     });
     html += `</div>`;
