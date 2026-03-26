@@ -1,21 +1,51 @@
-import { kv } from '@vercel/kv';
+const FALLBACK_TRENDING = [
+  { name: 'Oversized blazer', category: 'clothing', count: 0 },
+  { name: 'Linen wide-leg pants', category: 'clothing', count: 0 },
+  { name: 'Mini shoulder bag', category: 'bag', count: 0 },
+  { name: 'Platform mary jane shoes', category: 'shoes', count: 0 },
+  { name: 'Gold hoop earrings', category: 'jewelry', count: 0 },
+  { name: 'Ribbed tank top', category: 'clothing', count: 0 },
+  { name: 'Leather tote bag', category: 'bag', count: 0 },
+  { name: 'Ballet flats', category: 'shoes', count: 0 },
+  { name: 'Chunky knit cardigan', category: 'clothing', count: 0 },
+  { name: 'Silk slip dress', category: 'clothing', count: 0 },
+];
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Get all search counts
-    const counts = await kv.hgetall('search_counts');
-    const metas = await kv.hgetall('item_meta');
+    const kvUrl = process.env.KV_REST_API_URL;
+    const kvToken = process.env.KV_REST_API_TOKEN;
 
-    if (!counts || Object.keys(counts).length === 0) {
-      return res.status(200).json({ items: [] });
+    // If KV not configured, return fallback trending items
+    if (!kvUrl || !kvToken) {
+      return res.status(200).json({ items: FALLBACK_TRENDING, source: 'fallback' });
     }
 
-    // Sort by count descending, take top 20
+    const headers = { Authorization: `Bearer ${kvToken}` };
+
+    // Fetch counts and metadata in parallel
+    const [countsRes, metasRes] = await Promise.all([
+      fetch(`${kvUrl}/hgetall/search_counts`, { headers }),
+      fetch(`${kvUrl}/hgetall/item_meta`, { headers })
+    ]);
+
+    const countsData = await countsRes.json().catch(() => ({}));
+    const metasData = await metasRes.json().catch(() => ({}));
+
+    const counts = countsData.result;
+    const metas = metasData.result;
+
+    // No real searches yet — return fallback
+    if (!counts || Object.keys(counts).length === 0) {
+      return res.status(200).json({ items: FALLBACK_TRENDING, source: 'fallback' });
+    }
+
+    // Build sorted list from real data
     const items = Object.entries(counts)
       .map(([key, count]) => {
-        let meta = { name: key.replace('item:', ''), category: 'other' };
+        let meta = { name: key.replace(/_/g, ' '), category: 'other' };
         try {
           if (metas?.[key]) meta = JSON.parse(metas[key]);
         } catch {}
@@ -24,9 +54,10 @@ export default async function handler(req, res) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 20);
 
-    return res.status(200).json({ items });
+    return res.status(200).json({ items, source: 'live' });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: error.message || 'Server error' });
+    // On any error, return fallback so the page never breaks
+    return res.status(200).json({ items: FALLBACK_TRENDING, source: 'fallback' });
   }
 }
