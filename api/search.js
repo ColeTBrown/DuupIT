@@ -1,7 +1,5 @@
 function getResponseText(data) {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-    return data.output_text.trim();
-  }
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
   if (Array.isArray(data?.output)) {
     const texts = [];
     for (const item of data.output) {
@@ -20,60 +18,33 @@ function tryParseJson(text) {
   if (!text) return null;
   const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   try { return JSON.parse(cleaned); } catch {}
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    try { return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)); } catch {}
-  }
+  const a = cleaned.indexOf('{'), b = cleaned.lastIndexOf('}');
+  if (a !== -1 && b > a) { try { return JSON.parse(cleaned.slice(a, b + 1)); } catch {} }
   return null;
 }
 
-async function fetchProductImage(url) {
-  if (!url || !url.startsWith('http')) return '';
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      }
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return '';
-    const reader = res.body.getReader();
-    let html = '';
-    let bytesRead = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      html += new TextDecoder().decode(value);
-      bytesRead += value.length;
-      if (bytesRead >= 50000) { reader.cancel(); break; }
-    }
-    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1];
-    const twMatch = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
-      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
-    if (twMatch?.[1]?.startsWith('http')) return twMatch[1];
-    return '';
-  } catch { return ''; }
-}
-
-// Track search in Vercel KV — completely optional, silently skipped if KV not configured
+// Track search using Vercel KV REST API directly — no npm package needed
 async function trackSearch(itemName, category) {
   try {
-    // Only attempt if KV env vars are present
-    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) return;
-    const { kv } = await import('@vercel/kv');
-    const key = `item:${itemName.toLowerCase().trim()}`;
-    await kv.hincrby('search_counts', key, 1);
-    const existing = await kv.hget('item_meta', key);
-    if (!existing) {
-      await kv.hset('item_meta', { [key]: JSON.stringify({ name: itemName, category }) });
+    const url = process.env.KV_REST_API_URL;
+    const token = process.env.KV_REST_API_TOKEN;
+    if (!url || !token) return; // KV not configured, skip silently
+
+    const key = itemName.toLowerCase().trim().replace(/\s+/g, '_').slice(0, 60);
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    // Increment count
+    await fetch(`${url}/hincrby/search_counts/${encodeURIComponent(key)}/1`, { method: 'POST', headers });
+
+    // Store display name + category if not already set
+    const existing = await fetch(`${url}/hget/item_meta/${encodeURIComponent(key)}`, { headers });
+    const existingData = await existing.json().catch(() => ({}));
+    if (!existingData.result) {
+      await fetch(`${url}/hset/item_meta`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify([key, JSON.stringify({ name: itemName, category })])
+      });
     }
   } catch (e) {
     console.error('KV tracking error (non-fatal):', e);
@@ -93,7 +64,7 @@ export default async function handler(req, res) {
     // Step 1: identify the item
     const visionRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
         input: [{
@@ -101,7 +72,7 @@ export default async function handler(req, res) {
           content: [
             {
               type: 'input_text',
-              text: `Identify the MAIN product in this image. If part of the image is circled or highlighted, focus ONLY on that circled item.
+              text: `Identify the MAIN product in this image. If any part is circled or highlighted, focus ONLY on that item.
 
 Return ONLY valid JSON:
 {
@@ -111,7 +82,6 @@ Return ONLY valid JSON:
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
   "estimatedPrice": { "min": 20, "max": 100 }
 }
-
 Allowed categories: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other`
             },
             { type: 'input_image', image_url: `data:image/jpeg;base64,${imageBase64}` }
@@ -121,38 +91,30 @@ Allowed categories: clothing, shoes, bag, jewelry, accessory, home_decor, electr
     });
 
     const visionData = await visionRes.json().catch(() => ({}));
-    if (!visionRes.ok) {
-      return res.status(500).json({ error: visionData?.error?.message || `Vision failed (${visionRes.status})` });
-    }
+    if (!visionRes.ok) return res.status(500).json({ error: visionData?.error?.message || `Vision failed (${visionRes.status})` });
 
     const parsedItem = tryParseJson(getResponseText(visionData));
-    if (!parsedItem?.itemName) {
-      return res.status(500).json({ error: 'Could not identify item in photo. Try a clearer image.' });
-    }
+    if (!parsedItem?.itemName) return res.status(500).json({ error: 'Could not identify item in photo. Try a clearer image.' });
 
     const item = {
       itemName: String(parsedItem.itemName).trim(),
       category: String(parsedItem.category || 'other').trim(),
       description: String(parsedItem.description || '').trim(),
-      keywords: Array.isArray(parsedItem.keywords)
-        ? parsedItem.keywords.map(k => String(k).trim()).filter(Boolean).slice(0, 6) : [],
-      estimatedPrice: {
-        min: Number(parsedItem?.estimatedPrice?.min || 0),
-        max: Number(parsedItem?.estimatedPrice?.max || 0)
-      }
+      keywords: Array.isArray(parsedItem.keywords) ? parsedItem.keywords.map(k => String(k).trim()).filter(Boolean).slice(0, 6) : [],
+      estimatedPrice: { min: Number(parsedItem?.estimatedPrice?.min || 0), max: Number(parsedItem?.estimatedPrice?.max || 0) }
     };
 
     const sizeClause = size ? `\nSize needed: ${size} — only include listings available in this size.` : '';
     const detailsClause = details ? `\nAdditional preferences: ${details}` : '';
 
-    // Step 2: search listings
+    // Step 2: search listings — ask AI to find image URLs directly using web search
     const searchRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
         tools: [{ type: 'web_search' }],
-        input: `Find 5 to 7 real current product listings for this item.
+        input: `Find 5 to 7 real current product listings for this item. For each listing, also search for a direct image URL of that specific product.
 
 Item: ${item.itemName}
 Category: ${item.category}
@@ -161,8 +123,10 @@ Keywords: ${item.keywords.join(', ')}
 Price range: $${item.estimatedPrice.min}–$${item.estimatedPrice.max}${sizeClause}${detailsClause}
 
 Rules:
-- Real listings only, direct product page URLs (not search pages)
-- Include price and shipping (use 0 if unknown, note it)
+- Real in-stock listings only
+- Direct product page URLs (not search pages)
+- For imageUrl: find the actual product image URL from the listing page — it should end in .jpg, .jpeg, .png, or .webp and start with https://
+- Include price and shipping (use 0 if unknown, mention in note)
 - totalCost = price + shipping
 
 Return ONLY valid JSON:
@@ -175,6 +139,7 @@ Return ONLY valid JSON:
       "shipping": 0,
       "totalCost": 29.99,
       "url": "https://example.com/product",
+      "imageUrl": "https://example.com/images/product.jpg",
       "note": "Free returns · In stock"
     }
   ]
@@ -183,9 +148,7 @@ Return ONLY valid JSON:
     });
 
     const searchData = await searchRes.json().catch(() => ({}));
-    if (!searchRes.ok) {
-      return res.status(500).json({ error: searchData?.error?.message || `Search failed (${searchRes.status})` });
-    }
+    if (!searchRes.ok) return res.status(500).json({ error: searchData?.error?.message || `Search failed (${searchRes.status})` });
 
     const parsedResults = tryParseJson(getResponseText(searchData));
     let results = Array.isArray(parsedResults?.results) ? parsedResults.results : [];
@@ -195,25 +158,21 @@ Return ONLY valid JSON:
       .map(r => {
         const price = Number(r.price || 0);
         const shipping = Number(r.shipping || 0);
+        const imageUrl = String(r.imageUrl || '').trim();
         return {
           store: String(r.store).trim(),
           productName: String(r.productName).trim(),
           price, shipping,
           totalCost: Number(r.totalCost ?? (price + shipping)),
           url: String(r.url || '').trim(),
-          imageUrl: '',
+          imageUrl: imageUrl.startsWith('https://') ? imageUrl : '',
           note: String(r.note || '').trim()
         };
       })
       .sort((a, b) => a.totalCost - b.totalCost)
       .slice(0, 7);
 
-    // Step 3: fetch real product images in parallel
-    await Promise.all(results.map(async r => {
-      if (r.url?.startsWith('http')) r.imageUrl = await fetchProductImage(r.url);
-    }));
-
-    // Step 4: track search (non-blocking, non-fatal)
+    // Track search non-blocking
     trackSearch(item.itemName, item.category);
 
     return res.status(200).json({ item, results });
