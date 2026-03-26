@@ -23,7 +23,6 @@ body{font-family:'Jost',sans-serif;background:var(--cream);color:var(--ink);min-
 
 .page{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:0 28px 80px}
 
-/* Header */
 header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16,1,.3,1) both}
 .eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--wine-light);font-weight:500;margin-bottom:22px}
 .eline{width:32px;height:1px;background:var(--petal-deep)}
@@ -38,11 +37,9 @@ header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16
 .tab{font-family:'Jost',sans-serif;font-size:.85rem;font-weight:500;letter-spacing:.05em;padding:10px 26px;border-radius:100px;border:none;cursor:pointer;transition:all .25s ease;color:var(--ink-muted);background:transparent}
 .tab.active{background:var(--wine);color:var(--white);box-shadow:0 4px 14px rgba(139,58,90,.3)}
 .tab:not(.active):hover{color:var(--wine);background:var(--petal-pale)}
-
-/* Tab panels */
 .panel{display:none}.panel.active{display:block}
 
-/* Upload */
+/* Upload card */
 .ucard{background:var(--white);border-radius:28px;border:1.5px dashed var(--petal-deep);padding:64px 32px;text-align:center;cursor:pointer;transition:all .35s ease;position:relative;overflow:hidden;animation:rise .9s .12s cubic-bezier(.16,1,.3,1) both;margin-bottom:24px}
 .ucard::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(245,201,212,.22),transparent 60%);pointer-events:none}
 .ucard:hover,.ucard.drag-on{border-color:var(--wine);background:var(--petal-pale);transform:translateY(-3px);box-shadow:0 20px 60px rgba(139,58,90,.12)}
@@ -51,7 +48,6 @@ header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16
 .uhed{font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:400;color:var(--ink);margin-bottom:8px}
 .ucopy{font-size:.88rem;color:var(--ink-muted);margin-bottom:28px;line-height:1.6;max-width:440px;margin-left:auto;margin-right:auto}
 .brow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-
 .pill{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.88rem;font-weight:500;letter-spacing:.04em;cursor:pointer;border:none;transition:all .25s ease;text-decoration:none}
 .pf{background:var(--wine);color:var(--white);box-shadow:0 6px 20px rgba(139,58,90,.3)}
 .pf:hover{background:var(--ink);transform:translateY(-2px);box-shadow:0 10px 30px rgba(26,17,24,.25)}
@@ -59,44 +55,46 @@ header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16
 .pg:hover{background:var(--petal-mid);transform:translateY(-2px)}
 #fi,#ci{display:none}
 
-/* Annotation canvas section */
+/* Annotation */
 .annotate-sec{display:none;margin-bottom:24px;animation:rise .5s cubic-bezier(.16,1,.3,1) both}
 .annotate-sec.on{display:block}
 .annotate-card{background:var(--white);border-radius:24px;border:1px solid var(--border);padding:20px;box-shadow:0 8px 40px rgba(139,58,90,.07)}
-.annotate-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.annotate-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
 .annotate-title{font-family:'Cormorant Garamond',serif;font-size:1.2rem;color:var(--ink)}
-.annotate-sub{font-size:.78rem;color:var(--ink-muted);margin-top:2px}
+.annotate-sub{font-size:.78rem;color:var(--ink-muted);margin-top:3px}
 .tool-row{display:flex;gap:8px;flex-wrap:wrap}
-.tool-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;border:1.5px solid var(--border-s);background:var(--petal-pale);color:var(--ink-soft);transition:all .2s}
+.tool-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;border:1.5px solid var(--border-s);background:var(--petal-pale);color:var(--ink-soft);transition:all .2s;white-space:nowrap}
 .tool-btn.active,.tool-btn:hover{background:var(--wine);color:var(--white);border-color:var(--wine)}
-.canvas-wrap{position:relative;border-radius:16px;overflow:hidden;background:#000;cursor:crosshair;touch-action:none;user-select:none}
-.canvas-wrap canvas{display:block;max-width:100%;height:auto}
-#baseCanvas{position:absolute;top:0;left:0;width:100%;height:100%}
-#drawCanvas{position:absolute;top:0;left:0;width:100%;height:100%}
-.annotate-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center}
+
+/* Canvas */
+.canvas-wrap{position:relative;border-radius:16px;overflow:hidden;background:#1a1118;line-height:0;touch-action:none;user-select:none}
+.canvas-wrap canvas{display:block;width:100%;height:auto}
+#baseCanvas{position:relative;z-index:1;display:block;width:100%}
+#drawCanvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:crosshair}
+
+.annotate-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
 .color-row{display:flex;gap:6px;align-items:center}
-.color-swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .2s,border-color .2s}
+.color-swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .2s,border-color .2s;flex-shrink:0}
 .color-swatch.active,.color-swatch:hover{transform:scale(1.2);border-color:var(--ink)}
 .stroke-row{display:flex;gap:6px;align-items:center;margin-left:8px}
-.stroke-opt{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--petal-pale);border:1.5px solid var(--border-s);transition:all .2s}
+.stroke-opt{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--petal-pale);border:1.5px solid var(--border-s);transition:all .2s;flex-shrink:0}
 .stroke-opt.active,.stroke-opt:hover{background:var(--wine);border-color:var(--wine)}
-.stroke-dot{background:var(--white);border-radius:50%;pointer-events:none}
+.stroke-dot{background:currentColor;border-radius:50%;pointer-events:none}
+.stroke-opt.active .stroke-dot,.stroke-opt:hover .stroke-dot{background:var(--white)}
 .ann-spacer{flex:1}
-.bclear{background:none;border:none;color:var(--ink-muted);font-family:'Jost',sans-serif;font-size:.78rem;cursor:pointer;padding:4px 0;transition:color .2s}
+.bclear{background:none;border:none;color:var(--ink-muted);font-family:'Jost',sans-serif;font-size:.78rem;cursor:pointer;padding:4px 0;transition:color .2s;white-space:nowrap}
 .bclear:hover{color:var(--wine)}
 
 /* Preview */
 .prev-sec{display:none;animation:rise .5s cubic-bezier(.16,1,.3,1) both;margin-bottom:20px}
 .prev-sec.on{display:block}
 .prev-card{background:var(--white);border-radius:24px;border:1px solid var(--border);padding:24px;box-shadow:0 8px 40px rgba(139,58,90,.07);display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
-.pthumb{width:150px;height:150px;object-fit:cover;border-radius:18px;flex-shrink:0;border:2px solid var(--petal-mid);cursor:pointer;transition:opacity .2s}
-.pthumb:hover{opacity:.85}
-.pthumb-hint{font-size:.7rem;color:var(--ink-muted);margin-top:5px;text-align:center;width:150px}
+.pthumb-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0}
+.pthumb{width:130px;height:130px;object-fit:cover;border-radius:14px;border:2px solid var(--petal-mid);display:block}
+.pthumb-hint{font-size:.7rem;color:var(--ink-muted);text-align:center}
 .pmeta{flex:1;min-width:180px;padding-top:4px}
 .pey{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--wine-light);font-weight:500;margin-bottom:8px}
 .ptitle{font-family:'Cormorant Garamond',serif;font-size:1.3rem;color:var(--ink);margin-bottom:16px;font-weight:400}
-
-/* Search options */
 .search-opts{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
 .opt-row{display:flex;gap:12px;flex-wrap:wrap}
 .opt-group{display:flex;flex-direction:column;gap:5px;flex:1;min-width:140px}
@@ -104,8 +102,7 @@ header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16
 .opt-input{background:var(--petal-pale);border:1.5px solid var(--border-s);border-radius:10px;padding:9px 14px;font-family:'Jost',sans-serif;font-size:.85rem;color:var(--ink);outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
 .opt-input:focus{border-color:var(--petal-deep);box-shadow:0 0 0 3px rgba(232,135,159,.12)}
 .opt-input::placeholder{color:var(--ink-muted)}
-textarea.opt-input{resize:none;min-height:68px;line-height:1.5}
-
+textarea.opt-input{resize:none;min-height:64px;line-height:1.5}
 .bfind{background:linear-gradient(135deg,var(--wine) 0%,var(--petal-deep) 100%);color:var(--white);border:none;padding:14px 30px;border-radius:100px;font-family:'Jost',sans-serif;font-size:.9rem;font-weight:500;cursor:pointer;letter-spacing:.04em;box-shadow:0 8px 24px rgba(139,58,90,.35);transition:all .3s ease;display:inline-flex;align-items:center;gap:8px}
 .bfind:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(139,58,90,.4)}
 .bfind:disabled{opacity:.55;cursor:not-allowed;transform:none}
@@ -129,12 +126,11 @@ textarea.opt-input{resize:none;min-height:68px;line-height:1.5}
 .rtop{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px}
 .rhed{font-family:'Cormorant Garamond',serif;font-size:1.8rem;font-weight:400;color:var(--ink)}
 .rbadge{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;background:var(--petal-mid);color:var(--wine);padding:5px 14px;border-radius:100px;border:1px solid var(--border)}
-.idbar{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:16px 20px;margin-bottom:22px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(139,58,90,.05);animation:rise .4s ease both}
+.idbar{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:16px 20px;margin-bottom:22px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 20px rgba(139,58,90,.05)}
 .id-ico{font-size:26px}
 .id-lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:3px}
 .id-name{font-family:'Cormorant Garamond',serif;font-size:1.1rem;color:var(--ink)}
 .id-desc{font-size:.8rem;color:var(--ink-soft);margin-top:3px;line-height:1.5}
-
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:18px}
 .card{background:var(--white);border-radius:22px;border:1px solid var(--border);padding:0;display:flex;flex-direction:column;box-shadow:0 4px 20px rgba(139,58,90,.05);transition:all .3s ease;position:relative;overflow:hidden;animation:rise .5s ease both}
 .card::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--petal-deep),var(--wine));opacity:0;transition:opacity .3s;z-index:1}
@@ -159,7 +155,7 @@ textarea.opt-input{resize:none;min-height:68px;line-height:1.5}
 .card.top .cbtn:hover{background:var(--ink);border-color:var(--ink)}
 
 /* Popular tab */
-.pop-header{text-align:center;padding:20px 0 36px;animation:rise .6s cubic-bezier(.16,1,.3,1) both}
+.pop-header{text-align:center;padding:20px 0 36px}
 .pop-hed{font-family:'Cormorant Garamond',serif;font-size:2.2rem;font-weight:300;color:var(--ink);margin-bottom:8px}
 .pop-hed em{font-style:italic;color:var(--wine)}
 .pop-sub{font-size:.88rem;color:var(--ink-muted);line-height:1.6}
@@ -172,23 +168,22 @@ textarea.opt-input{resize:none;min-height:68px;line-height:1.5}
 .pop-emoji{font-size:2rem;margin-bottom:10px;display:block;margin-top:8px}
 .pop-name{font-family:'Cormorant Garamond',serif;font-size:1.05rem;color:var(--ink);line-height:1.4;margin-bottom:8px}
 .pop-meta{display:flex;align-items:center;justify-content:space-between}
-.pop-count{font-size:.75rem;color:var(--ink-muted);display:flex;align-items:center;gap:4px}
+.pop-count{font-size:.75rem;color:var(--ink-muted)}
 .pop-bar{height:3px;background:var(--petal-mid);border-radius:2px;margin-top:10px;overflow:hidden}
 .pop-fill{height:100%;background:linear-gradient(90deg,var(--petal-deep),var(--wine));border-radius:2px;transition:width .6s ease}
-.pop-search-btn{font-size:.75rem;color:var(--wine);font-weight:500;background:var(--petal-pale);border:1px solid var(--border-s);border-radius:100px;padding:4px 10px;cursor:pointer;transition:all .2s;white-space:nowrap}
-.pop-search-btn:hover{background:var(--wine);color:var(--white);border-color:var(--wine)}
+.pop-search-btn{font-size:.75rem;color:var(--wine);font-weight:500;background:var(--petal-pale);border:1px solid var(--border-s);border-radius:100px;padding:4px 10px;white-space:nowrap}
 .pop-empty{text-align:center;padding:60px 20px;color:var(--ink-muted)}
 .pop-empty-ico{font-size:3rem;margin-bottom:16px}
 .pop-refresh{margin-top:24px;text-align:center}
 
 /* Tips */
-.tips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:36px 0;animation:rise .9s .25s cubic-bezier(.16,1,.3,1) both}
+.tips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:36px 0}
 .tip{background:var(--white);border-radius:18px;border:1px solid var(--border);padding:18px 20px;display:flex;gap:14px;box-shadow:0 2px 12px rgba(139,58,90,.04)}
 .tico{font-size:22px;flex-shrink:0;margin-top:1px}
 .thed{font-weight:500;font-size:.88rem;color:var(--ink);margin-bottom:4px}
 .ttxt{font-size:.78rem;color:var(--ink-soft);line-height:1.55}
 
-footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margin-top:24px;animation:rise .9s .35s cubic-bezier(.16,1,.3,1) both}
+footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margin-top:24px}
 .credit{font-family:'Cormorant Garamond',serif;font-size:.95rem;font-style:italic;color:var(--ink-muted)}
 .credit strong{color:var(--wine);font-style:normal;font-weight:600}
 
@@ -198,7 +193,6 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
 
 @media(max-width:560px){
   .brand{font-size:2.8rem}
-  .pthumb{width:110px;height:110px}
   .grid,.pop-grid{grid-template-columns:1fr}
   header{padding:40px 0 24px}
   .opt-row{flex-direction:column}
@@ -227,15 +221,15 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
     </div>
   </header>
 
-  <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('search')">🔍 Find Dupes</button>
-    <button class="tab" onclick="switchTab('popular')">🔥 Most Popular</button>
+    <button class="tab active" id="tabSearch" onclick="switchTab('search')">🔍 Find Dupes</button>
+    <button class="tab" id="tabPopular" onclick="switchTab('popular')">🔥 Most Popular</button>
   </div>
 
-  <!-- Search Panel -->
+  <!-- ── Search Panel ── -->
   <div class="panel active" id="panel-search">
 
+    <!-- Upload drop zone -->
     <div class="ucard" id="dz">
       <div class="uicon">📸</div>
       <div class="uhed">Drop a photo, find a deal</div>
@@ -248,13 +242,13 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
       <input type="file" id="ci" accept="image/*" capture="environment" onchange="loadFile(this.files[0])"/>
     </div>
 
-    <!-- Annotation canvas -->
+    <!-- Annotation canvas — shown automatically after upload -->
     <div class="annotate-sec" id="annotateSec">
       <div class="annotate-card">
         <div class="annotate-top">
           <div>
             <div class="annotate-title">✏️ Circle what you want</div>
-            <div class="annotate-sub">Draw on the photo to highlight the specific item — the AI will focus on it</div>
+            <div class="annotate-sub">Draw on the photo to tell the AI which item to find — or skip straight to searching</div>
           </div>
           <div class="tool-row">
             <button class="tool-btn active" id="toolCircle" onclick="setTool('circle')">⭕ Circle</button>
@@ -262,10 +256,12 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
             <button class="tool-btn" id="toolRect" onclick="setTool('rect')">⬜ Box</button>
           </div>
         </div>
+
         <div class="canvas-wrap" id="canvasWrap">
           <canvas id="baseCanvas"></canvas>
           <canvas id="drawCanvas"></canvas>
         </div>
+
         <div class="annotate-actions">
           <div class="color-row">
             <div class="color-swatch active" style="background:#e8879f" onclick="setColor('#e8879f',this)" title="Pink"></div>
@@ -274,12 +270,12 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
             <div class="color-swatch" style="background:#1a1118" onclick="setColor('#1a1118',this)" title="Black"></div>
           </div>
           <div class="stroke-row">
-            <div class="stroke-opt active" id="sz1" onclick="setStroke(3,this)" title="Thin"><div class="stroke-dot" style="width:4px;height:4px"></div></div>
-            <div class="stroke-opt" id="sz2" onclick="setStroke(6,this)" title="Medium"><div class="stroke-dot" style="width:7px;height:7px"></div></div>
-            <div class="stroke-opt" id="sz3" onclick="setStroke(10,this)" title="Thick"><div class="stroke-dot" style="width:11px;height:11px"></div></div>
+            <div class="stroke-opt active" onclick="setStroke(3,this)" title="Thin"><div class="stroke-dot" style="width:4px;height:4px"></div></div>
+            <div class="stroke-opt" onclick="setStroke(6,this)" title="Medium"><div class="stroke-dot" style="width:7px;height:7px"></div></div>
+            <div class="stroke-opt" onclick="setStroke(10,this)" title="Thick"><div class="stroke-dot" style="width:11px;height:11px"></div></div>
           </div>
           <div class="ann-spacer"></div>
-          <button class="bclear" onclick="clearDrawing()">↺ Clear drawing</button>
+          <button class="bclear" onclick="clearDrawing()">↺ Clear</button>
         </div>
       </div>
     </div>
@@ -287,9 +283,9 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
     <!-- Preview + search options -->
     <div class="prev-sec" id="prevSec">
       <div class="prev-card">
-        <div>
-          <img class="pthumb" id="prevImg" src="" alt="Preview" onclick="showAnnotate()" title="Click to annotate"/>
-          <div class="pthumb-hint">✏️ Click to annotate</div>
+        <div class="pthumb-wrap">
+          <img class="pthumb" id="prevImg" src="" alt="Preview"/>
+          <div class="pthumb-hint">↑ draw above to annotate</div>
         </div>
         <div class="pmeta">
           <div class="pey">Photo ready ✦</div>
@@ -331,13 +327,15 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
 
   </div><!-- /panel-search -->
 
-  <!-- Popular Panel -->
+  <!-- ── Popular Panel ── -->
   <div class="panel" id="panel-popular">
     <div class="pop-header">
       <div class="pop-hed">What people are <em>shopping</em></div>
       <div class="pop-sub">Real searches from Dupe It users — updated live</div>
     </div>
-    <div id="popContent"><div class="pop-loading"><div class="spinner" style="margin:0 auto 16px"></div>Loading trending items…</div></div>
+    <div id="popContent">
+      <div class="pop-loading"><div class="spinner" style="margin:0 auto 16px"></div>Loading trending items…</div>
+    </div>
     <div class="pop-refresh">
       <button class="pill pg" onclick="loadPopular()">↺ Refresh</button>
     </div>
@@ -352,25 +350,26 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
 </footer>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
-let b64 = null;           // original image base64
-let annotatedB64 = null;  // image with annotation merged in (sent to API)
+// ── State ──────────────────────────────────────────────────────────────────────
+let b64 = null;
+let annotatedB64 = null;
 let drawTool = 'circle';
 let drawColor = '#e8879f';
 let drawStroke = 3;
 let isDrawing = false;
-let startX, startY;
-let snapshots = []; // undo stack for free/rect draws
+let startX = 0, startY = 0;
+let lastSnapshot = null;
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────────
+// ── Tabs ───────────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['search','popular'][i] === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   if (name === 'popular') loadPopular();
 }
 
-// ─── File loading ─────────────────────────────────────────────────────────────
+// ── Drag & drop ────────────────────────────────────────────────────────────────
 const dz = document.getElementById('dz');
 dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-on'); });
 dz.addEventListener('dragleave', () => dz.classList.remove('drag-on'));
@@ -380,21 +379,29 @@ dz.addEventListener('drop', e => {
   if (f && f.type.startsWith('image/')) loadFile(f);
 });
 
+// ── File load ──────────────────────────────────────────────────────────────────
 function loadFile(f) {
   if (!f) return;
   const reader = new FileReader();
-  reader.onload = e => {
-    resizeImage(e.target.result, 1200, 0.9, (base64Only, previewUrl) => {
-      b64 = base64Only;
+  reader.onload = ev => {
+    resizeImage(ev.target.result, 1200, 0.9, (b64only, previewUrl) => {
+      b64 = b64only;
       annotatedB64 = null;
+
+      // Show preview thumbnail
       document.getElementById('prevImg').src = previewUrl;
       document.getElementById('prevTitle').textContent = f.name.replace(/\.[^.]+$/, '') || 'Your image';
       document.getElementById('prevSec').classList.add('on');
-      document.getElementById('annotateSec').classList.remove('on');
+
+      // Hide others
       document.getElementById('resultsSec').style.display = 'none';
       document.getElementById('errBox').classList.remove('on');
       document.getElementById('loadSec').classList.remove('on');
       document.getElementById('tipsRow').style.display = 'none';
+
+      // Show annotation canvas and initialise it
+      document.getElementById('annotateSec').classList.add('on');
+      initCanvas(previewUrl);
     });
   };
   reader.readAsDataURL(f);
@@ -403,44 +410,143 @@ function loadFile(f) {
 function resizeImage(dataUrl, maxSize, quality, cb) {
   const img = new Image();
   img.onload = () => {
-    let { width, height } = img;
-    if (width > height && width > maxSize) { height = Math.round(height*(maxSize/width)); width = maxSize; }
-    else if (height > width && height > maxSize) { width = Math.round(width*(maxSize/height)); height = maxSize; }
-    else if (width === height && width > maxSize) { width = maxSize; height = maxSize; }
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-    const out = canvas.toDataURL('image/jpeg', quality);
+    let {width: w, height: h} = img;
+    if (w > h && w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; }
+    else if (h > w && h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; }
+    else if (w === h && w > maxSize) { w = h = maxSize; }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    const out = c.toDataURL('image/jpeg', quality);
     cb(out.split(',')[1], out);
   };
   img.src = dataUrl;
 }
 
-// ─── Annotation ───────────────────────────────────────────────────────────────
-function showAnnotate() {
-  if (!b64) return;
-  const sec = document.getElementById('annotateSec');
-  sec.classList.add('on');
-  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// ── Canvas ─────────────────────────────────────────────────────────────────────
+const baseCanvas = document.getElementById('baseCanvas');
+const drawCanvas = document.getElementById('drawCanvas');
+const baseCtx = baseCanvas.getContext('2d');
+const drawCtx = drawCanvas.getContext('2d');
 
-  const base = document.getElementById('baseCanvas');
-  const draw = document.getElementById('drawCanvas');
+function initCanvas(previewUrl) {
   const img = new Image();
   img.onload = () => {
-    const maxW = document.getElementById('canvasWrap').clientWidth;
-    const scale = Math.min(1, maxW / img.width);
-    const w = Math.round(img.width * scale);
-    const h = Math.round(img.height * scale);
-    [base, draw].forEach(c => { c.width = w; c.height = h; });
-    base.getContext('2d').drawImage(img, 0, 0, w, h);
-    clearDrawing();
+    // Set both canvases to the image's natural pixel dimensions
+    baseCanvas.width = img.naturalWidth;
+    baseCanvas.height = img.naturalHeight;
+    drawCanvas.width = img.naturalWidth;
+    drawCanvas.height = img.naturalHeight;
+
+    baseCtx.drawImage(img, 0, 0);
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    lastSnapshot = null;
+    annotatedB64 = null;
   };
-  img.src = 'data:image/jpeg;base64,' + b64;
+  img.src = previewUrl;
+}
+
+// Get canvas coords accounting for CSS scaling
+function getPos(e) {
+  const rect = drawCanvas.getBoundingClientRect();
+  const scaleX = drawCanvas.width / rect.width;
+  const scaleY = drawCanvas.height / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top) * scaleY
+  };
+}
+
+function styleCtx() {
+  drawCtx.strokeStyle = drawColor;
+  drawCtx.lineWidth = drawStroke * (drawCanvas.width / drawCanvas.getBoundingClientRect().width);
+  drawCtx.lineCap = 'round';
+  drawCtx.lineJoin = 'round';
+}
+
+// Pointer events
+drawCanvas.addEventListener('mousedown', startDraw, { passive: false });
+drawCanvas.addEventListener('touchstart', startDraw, { passive: false });
+drawCanvas.addEventListener('mousemove', moveDraw, { passive: false });
+drawCanvas.addEventListener('touchmove', moveDraw, { passive: false });
+drawCanvas.addEventListener('mouseup', endDraw);
+drawCanvas.addEventListener('touchend', endDraw);
+drawCanvas.addEventListener('mouseleave', endDraw);
+
+function startDraw(e) {
+  e.preventDefault();
+  isDrawing = true;
+  const p = getPos(e);
+  startX = p.x; startY = p.y;
+  if (drawTool === 'free') {
+    styleCtx();
+    drawCtx.beginPath();
+    drawCtx.moveTo(startX, startY);
+  } else {
+    // Save snapshot before drawing shape so we can redraw clean preview
+    lastSnapshot = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+  }
+}
+
+function moveDraw(e) {
+  if (!isDrawing) return;
+  e.preventDefault();
+  const p = getPos(e);
+  if (drawTool === 'free') {
+    styleCtx();
+    drawCtx.lineTo(p.x, p.y);
+    drawCtx.stroke();
+  } else {
+    // Restore snapshot then draw live preview
+    if (lastSnapshot) drawCtx.putImageData(lastSnapshot, 0, 0);
+    else drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    styleCtx();
+    drawCtx.beginPath();
+    if (drawTool === 'circle') {
+      const rx = (p.x - startX) / 2, ry = (p.y - startY) / 2;
+      drawCtx.ellipse(startX + rx, startY + ry, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2);
+    } else {
+      drawCtx.rect(startX, startY, p.x - startX, p.y - startY);
+    }
+    drawCtx.stroke();
+  }
+}
+
+function endDraw(e) {
+  if (!isDrawing) return;
+  isDrawing = false;
+  if (drawTool !== 'free') {
+    lastSnapshot = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+  }
+  mergeAnnotation();
+}
+
+function mergeAnnotation() {
+  const merged = document.createElement('canvas');
+  merged.width = baseCanvas.width;
+  merged.height = baseCanvas.height;
+  const ctx = merged.getContext('2d');
+  ctx.drawImage(baseCanvas, 0, 0);
+  ctx.drawImage(drawCanvas, 0, 0);
+  const dataUrl = merged.toDataURL('image/jpeg', 0.9);
+  annotatedB64 = dataUrl.split(',')[1];
+  document.getElementById('prevImg').src = dataUrl;
+}
+
+function clearDrawing() {
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  lastSnapshot = null;
+  annotatedB64 = null;
+  // Reset preview thumb to original
+  document.getElementById('prevImg').src = 'data:image/jpeg;base64,' + b64;
 }
 
 function setTool(t) {
   drawTool = t;
-  ['circle','free','rect'].forEach(n => document.getElementById('tool'+n.charAt(0).toUpperCase()+n.slice(1)).classList.toggle('active', n===t));
+  ['Circle','Free','Rect'].forEach(n => {
+    document.getElementById('tool' + n).classList.toggle('active', n.toLowerCase() === t);
+  });
 }
 function setColor(c, el) {
   drawColor = c;
@@ -452,93 +558,8 @@ function setStroke(s, el) {
   document.querySelectorAll('.stroke-opt').forEach(o => o.classList.remove('active'));
   el.classList.add('active');
 }
-function clearDrawing() {
-  const draw = document.getElementById('drawCanvas');
-  draw.getContext('2d').clearRect(0, 0, draw.width, draw.height);
-  snapshots = [];
-  annotatedB64 = null;
-}
 
-// Canvas coordinate helper (handles CSS scaling)
-function getPos(e, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const src = e.touches ? e.touches[0] : e;
-  return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
-}
-
-const drawCanvas = document.getElementById('drawCanvas');
-const drawCtx = drawCanvas.getContext('2d');
-
-function styleCtx(ctx) {
-  ctx.strokeStyle = drawColor;
-  ctx.lineWidth = drawStroke;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-}
-
-// Mouse / touch events
-['mousedown','touchstart'].forEach(ev => drawCanvas.addEventListener(ev, e => {
-  e.preventDefault();
-  isDrawing = true;
-  const p = getPos(e, drawCanvas);
-  startX = p.x; startY = p.y;
-  if (drawTool === 'free') {
-    snapshots.push(drawCtx.getImageData(0,0,drawCanvas.width,drawCanvas.height));
-    drawCtx.beginPath();
-    drawCtx.moveTo(startX, startY);
-  }
-}, { passive: false }));
-
-['mousemove','touchmove'].forEach(ev => drawCanvas.addEventListener(ev, e => {
-  if (!isDrawing) return;
-  e.preventDefault();
-  const p = getPos(e, drawCanvas);
-  if (drawTool === 'free') {
-    styleCtx(drawCtx);
-    drawCtx.lineTo(p.x, p.y);
-    drawCtx.stroke();
-  } else {
-    // preview circle/rect by restoring last snapshot
-    if (snapshots.length) drawCtx.putImageData(snapshots[snapshots.length-1], 0, 0);
-    else drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
-    styleCtx(drawCtx);
-    drawCtx.beginPath();
-    if (drawTool === 'circle') {
-      const rx = (p.x - startX) / 2, ry = (p.y - startY) / 2;
-      drawCtx.ellipse(startX + rx, startY + ry, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI*2);
-    } else {
-      drawCtx.rect(startX, startY, p.x - startX, p.y - startY);
-    }
-    drawCtx.stroke();
-  }
-}, { passive: false }));
-
-['mouseup','touchend','mouseleave'].forEach(ev => drawCanvas.addEventListener(ev, e => {
-  if (!isDrawing) return;
-  isDrawing = false;
-  if (drawTool !== 'free') {
-    snapshots.push(drawCtx.getImageData(0,0,drawCanvas.width,drawCanvas.height));
-  }
-  mergeAnnotation();
-}));
-
-function mergeAnnotation() {
-  const base = document.getElementById('baseCanvas');
-  const draw = document.getElementById('drawCanvas');
-  const merged = document.createElement('canvas');
-  merged.width = base.width; merged.height = base.height;
-  const ctx = merged.getContext('2d');
-  ctx.drawImage(base, 0, 0);
-  ctx.drawImage(draw, 0, 0);
-  const dataUrl = merged.toDataURL('image/jpeg', 0.9);
-  annotatedB64 = dataUrl.split(',')[1];
-  // update the thumbnail
-  document.getElementById('prevImg').src = dataUrl;
-}
-
-// ─── Search ───────────────────────────────────────────────────────────────────
+// ── Search ─────────────────────────────────────────────────────────────────────
 function reset() {
   b64 = null; annotatedB64 = null;
   document.getElementById('prevSec').classList.remove('on');
@@ -553,12 +574,8 @@ function reset() {
   document.getElementById('ci').value = '';
   document.getElementById('sizeInput').value = '';
   document.getElementById('detailsInput').value = '';
-  clearDrawing();
-}
-
-function setLoad(h, s) {
-  document.getElementById('lhed').textContent = h;
-  document.getElementById('lsub').textContent = s;
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  lastSnapshot = null;
 }
 
 async function doSearch() {
@@ -569,12 +586,14 @@ async function doSearch() {
   const details = document.getElementById('detailsInput').value.trim();
   const btn = document.getElementById('findBtn');
   btn.disabled = true;
+
   document.getElementById('errBox').classList.remove('on');
   document.getElementById('resultsSec').style.display = 'none';
   document.getElementById('prevSec').classList.remove('on');
   document.getElementById('annotateSec').classList.remove('on');
   document.getElementById('loadSec').classList.add('on');
-  setLoad('Identifying your item…', 'AI vision is analyzing your photo ✦');
+  document.getElementById('lhed').textContent = 'Identifying your item…';
+  document.getElementById('lsub').textContent = 'AI vision is analyzing your photo ✦';
 
   try {
     const res = await fetch('/api/search', {
@@ -587,17 +606,17 @@ async function doSearch() {
     document.getElementById('loadSec').classList.remove('on');
     renderResults(data.item, data.results || []);
   } catch (e) {
-    const eb = document.getElementById('errBox');
-    eb.textContent = '⚠️ ' + (e.message || 'Something went wrong. Please try again.');
-    eb.classList.add('on');
+    document.getElementById('errBox').textContent = '⚠️ ' + (e.message || 'Something went wrong. Please try again.');
+    document.getElementById('errBox').classList.add('on');
     document.getElementById('loadSec').classList.remove('on');
     document.getElementById('prevSec').classList.add('on');
+    document.getElementById('annotateSec').classList.add('on');
   } finally {
     btn.disabled = false;
   }
 }
 
-// ─── Results rendering ────────────────────────────────────────────────────────
+// ── Results ────────────────────────────────────────────────────────────────────
 const icons = { clothing:'👗', shoes:'👠', bag:'👜', jewelry:'💍', accessory:'✨', home_decor:'🪴', electronics:'📱', beauty:'💄', other:'🛍️' };
 
 function esc(str) {
@@ -615,14 +634,14 @@ function renderResults(item, results) {
   if (!results.length) {
     html += `<div style="text-align:center;padding:52px 20px;color:var(--ink-muted)"><div style="font-size:2.5rem;margin-bottom:14px">🔍</div><div style="font-family:'Cormorant Garamond',serif;font-size:1.2rem;color:var(--ink);margin-bottom:8px">No listings found</div><p style="font-size:.85rem">Try a closer photo or better lighting.</p></div>`;
   } else {
-    html += `<div class="grid">`;
-    results.forEach((r,i) => {
-      const best = i===0;
+    html += '<div class="grid">';
+    results.forEach((r, i) => {
+      const best = i === 0;
       const price = Number(r.price||0).toFixed(2);
-      const shippingNum = Number(r.shipping||0);
-      const shipLine = shippingNum===0 ? `<span class="cfree">Free shipping</span>` : `+ $${shippingNum.toFixed(2)} shipping`;
-      const hasUrl = r.url && String(r.url).startsWith('http');
-      const hasImg = r.imageUrl && String(r.imageUrl).startsWith('http');
+      const ship = Number(r.shipping||0);
+      const shipLine = ship === 0 ? '<span class="cfree">Free shipping</span>' : `+ $${ship.toFixed(2)} shipping`;
+      const hasUrl = r.url?.startsWith('http');
+      const hasImg = r.imageUrl?.startsWith('http');
       html += `<div class="card${best?' top':''}">
         ${best?'<div class="bestpill">Best Deal</div>':''}
         <div class="card-img-wrap">${hasImg
@@ -634,18 +653,18 @@ function renderResults(item, results) {
           <div class="cnote">${esc(r.note||'')}</div>
           <div class="cprice">$${price}</div>
           <div class="cship">${shipLine}</div>
-          ${hasUrl ? `<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>` : `<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>`}
+          ${hasUrl?`<a class="cbtn" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Shop Now →</a>`:'<div class="cbtn" style="opacity:.4;cursor:default">Link unavailable</div>'}
         </div></div>`;
     });
-    html += `</div>`;
+    html += '</div>';
   }
-  html += `<div style="text-align:center;margin-top:32px"><button class="pill pg" type="button" onclick="reset()">📸 Search another item</button></div>`;
+  html += `<div style="text-align:center;margin-top:32px"><button class="pill pg" onclick="reset()">📸 Search another item</button></div>`;
   sec.innerHTML = html;
   sec.style.display = 'block';
   sec.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-// ─── Popular tab ──────────────────────────────────────────────────────────────
+// ── Popular ────────────────────────────────────────────────────────────────────
 async function loadPopular() {
   const content = document.getElementById('popContent');
   content.innerHTML = '<div class="pop-loading"><div class="spinner" style="margin:0 auto 16px"></div>Loading trending items…</div>';
@@ -663,9 +682,8 @@ async function loadPopular() {
     items.forEach((item, i) => {
       const ico = icons[item.category] || '🛍️';
       const pct = Math.round((item.count / max) * 100);
-      const isTop = i < 3;
       html += `<div class="pop-card" onclick="searchFromPopular('${esc(item.name)}')">
-        <div class="pop-rank ${isTop?'gold':''}">${medals[i] || '#'+(i+1)}</div>
+        <div class="pop-rank${i<3?' gold':''}">${medals[i]||'#'+(i+1)}</div>
         <span class="pop-emoji">${ico}</span>
         <div class="pop-name">${esc(item.name)}</div>
         <div class="pop-meta">
@@ -677,16 +695,15 @@ async function loadPopular() {
     });
     html += '</div>';
     content.innerHTML = html;
-  } catch(e) {
-    content.innerHTML = `<div class="pop-empty"><div class="pop-empty-ico">⚠️</div><p style="font-size:.85rem;color:var(--ink-muted)">Couldn't load popular items. Try again.</p></div>`;
+  } catch {
+    content.innerHTML = `<div class="pop-empty"><div class="pop-empty-ico">⚠️</div><p style="font-size:.85rem;color:var(--ink-muted)">Couldn't load popular items.</p></div>`;
   }
 }
 
 function searchFromPopular(itemName) {
-  // Switch to search tab and pre-fill the details
   switchTab('search');
   document.getElementById('detailsInput').value = itemName;
-  document.getElementById('dz').scrollIntoView({ behavior:'smooth', block:'start' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 </script>
 </body>
