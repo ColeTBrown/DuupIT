@@ -1,5 +1,3 @@
-import { kv } from '@vercel/kv';
-
 function getResponseText(data) {
   if (typeof data?.output_text === 'string' && data.output_text.trim()) {
     return data.output_text.trim();
@@ -46,7 +44,8 @@ async function fetchProductImage(url) {
     clearTimeout(timeout);
     if (!res.ok) return '';
     const reader = res.body.getReader();
-    let html = '', bytesRead = 0;
+    let html = '';
+    let bytesRead = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -64,19 +63,20 @@ async function fetchProductImage(url) {
   } catch { return ''; }
 }
 
-// Log search to Vercel KV for popular tracking
+// Track search in Vercel KV — completely optional, silently skipped if KV not configured
 async function trackSearch(itemName, category) {
   try {
+    // Only attempt if KV env vars are present
+    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) return;
+    const { kv } = await import('@vercel/kv');
     const key = `item:${itemName.toLowerCase().trim()}`;
     await kv.hincrby('search_counts', key, 1);
-    // Store metadata separately so we can retrieve category/display name
     const existing = await kv.hget('item_meta', key);
     if (!existing) {
       await kv.hset('item_meta', { [key]: JSON.stringify({ name: itemName, category }) });
     }
   } catch (e) {
-    // Non-fatal — don't fail the search if tracking fails
-    console.error('KV tracking error:', e);
+    console.error('KV tracking error (non-fatal):', e);
   }
 }
 
@@ -99,7 +99,21 @@ export default async function handler(req, res) {
         input: [{
           role: 'user',
           content: [
-            { type: 'input_text', text: `Identify the MAIN product in this image.\n\nReturn ONLY valid JSON in exactly this format:\n{\n  "itemName": "specific item name",\n  "category": "clothing",\n  "description": "short visual description",\n  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],\n  "estimatedPrice": { "min": 20, "max": 100 }\n}\n\nAllowed categories:\nclothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other` },
+            {
+              type: 'input_text',
+              text: `Identify the MAIN product in this image. If part of the image is circled or highlighted, focus ONLY on that circled item.
+
+Return ONLY valid JSON:
+{
+  "itemName": "specific item name",
+  "category": "clothing",
+  "description": "short visual description",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "estimatedPrice": { "min": 20, "max": 100 }
+}
+
+Allowed categories: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other`
+            },
             { type: 'input_image', image_url: `data:image/jpeg;base64,${imageBase64}` }
           ]
         }]
@@ -107,27 +121,29 @@ export default async function handler(req, res) {
     });
 
     const visionData = await visionRes.json().catch(() => ({}));
-    if (!visionRes.ok) return res.status(500).json({ error: visionData?.error?.message || `Vision request failed (${visionRes.status})` });
+    if (!visionRes.ok) {
+      return res.status(500).json({ error: visionData?.error?.message || `Vision failed (${visionRes.status})` });
+    }
 
-    const visionText = getResponseText(visionData);
-    const parsedItem = tryParseJson(visionText);
-    if (!parsedItem) return res.status(500).json({ error: `Could not parse item identification. Raw: ${visionText || 'empty'}` });
+    const parsedItem = tryParseJson(getResponseText(visionData));
+    if (!parsedItem?.itemName) {
+      return res.status(500).json({ error: 'Could not identify item in photo. Try a clearer image.' });
+    }
 
     const item = {
-      itemName: String(parsedItem.itemName || '').trim(),
+      itemName: String(parsedItem.itemName).trim(),
       category: String(parsedItem.category || 'other').trim(),
       description: String(parsedItem.description || '').trim(),
-      keywords: Array.isArray(parsedItem.keywords) ? parsedItem.keywords.map(k => String(k).trim()).filter(Boolean).slice(0,6) : [],
-      estimatedPrice: { min: Number(parsedItem?.estimatedPrice?.min || 0), max: Number(parsedItem?.estimatedPrice?.max || 0) }
+      keywords: Array.isArray(parsedItem.keywords)
+        ? parsedItem.keywords.map(k => String(k).trim()).filter(Boolean).slice(0, 6) : [],
+      estimatedPrice: {
+        min: Number(parsedItem?.estimatedPrice?.min || 0),
+        max: Number(parsedItem?.estimatedPrice?.max || 0)
+      }
     };
 
-    if (!item.itemName) return res.status(500).json({ error: `Item identification incomplete. Raw: ${visionText || 'empty'}` });
-
-    // Track the search (fire-and-forget)
-    trackSearch(item.itemName, item.category);
-
     const sizeClause = size ? `\nSize needed: ${size} — only include listings available in this size.` : '';
-    const detailsClause = details ? `\nAdditional user preferences: ${details}` : '';
+    const detailsClause = details ? `\nAdditional preferences: ${details}` : '';
 
     // Step 2: search listings
     const searchRes = await fetch('https://api.openai.com/v1/responses', {
@@ -136,25 +152,52 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
         tools: [{ type: 'web_search' }],
-        input: `Find 5 to 7 real current product listings for this item.\n\nItem: ${item.itemName}\nCategory: ${item.category}\nDescription: ${item.description}\nKeywords: ${item.keywords.join(', ')}\nExpected price range: $${item.estimatedPrice.min}-$${item.estimatedPrice.max}${sizeClause}${detailsClause}\n\nRules:\n- real listings only\n- direct product page URLs only (not search pages)\n- include price\n- include shipping when possible; if unknown use 0 and note it\n- include totalCost = price + shipping\n- sort cheapest first\n\nReturn ONLY valid JSON:\n{\n  "results": [\n    {\n      "store": "Store name",\n      "productName": "Exact product title",\n      "price": 29.99,\n      "shipping": 0,\n      "totalCost": 29.99,\n      "url": "https://example.com/product",\n      "note": "Free returns · In stock"\n    }\n  ]\n}`
+        input: `Find 5 to 7 real current product listings for this item.
+
+Item: ${item.itemName}
+Category: ${item.category}
+Description: ${item.description}
+Keywords: ${item.keywords.join(', ')}
+Price range: $${item.estimatedPrice.min}–$${item.estimatedPrice.max}${sizeClause}${detailsClause}
+
+Rules:
+- Real listings only, direct product page URLs (not search pages)
+- Include price and shipping (use 0 if unknown, note it)
+- totalCost = price + shipping
+
+Return ONLY valid JSON:
+{
+  "results": [
+    {
+      "store": "Store name",
+      "productName": "Exact product title",
+      "price": 29.99,
+      "shipping": 0,
+      "totalCost": 29.99,
+      "url": "https://example.com/product",
+      "note": "Free returns · In stock"
+    }
+  ]
+}`
       })
     });
 
     const searchData = await searchRes.json().catch(() => ({}));
-    if (!searchRes.ok) return res.status(500).json({ error: searchData?.error?.message || `Search failed (${searchRes.status})` });
+    if (!searchRes.ok) {
+      return res.status(500).json({ error: searchData?.error?.message || `Search failed (${searchRes.status})` });
+    }
 
-    const searchText = getResponseText(searchData);
-    const parsedResults = tryParseJson(searchText);
+    const parsedResults = tryParseJson(getResponseText(searchData));
     let results = Array.isArray(parsedResults?.results) ? parsedResults.results : [];
 
     results = results
-      .filter(r => r && r.productName && r.store)
+      .filter(r => r?.productName && r?.store)
       .map(r => {
         const price = Number(r.price || 0);
         const shipping = Number(r.shipping || 0);
         return {
-          store: String(r.store || '').trim(),
-          productName: String(r.productName || '').trim(),
+          store: String(r.store).trim(),
+          productName: String(r.productName).trim(),
           price, shipping,
           totalCost: Number(r.totalCost ?? (price + shipping)),
           url: String(r.url || '').trim(),
@@ -162,13 +205,16 @@ export default async function handler(req, res) {
           note: String(r.note || '').trim()
         };
       })
-      .sort((a,b) => a.totalCost - b.totalCost)
+      .sort((a, b) => a.totalCost - b.totalCost)
       .slice(0, 7);
 
     // Step 3: fetch real product images in parallel
     await Promise.all(results.map(async r => {
       if (r.url?.startsWith('http')) r.imageUrl = await fetchProductImage(r.url);
     }));
+
+    // Step 4: track search (non-blocking, non-fatal)
+    trackSearch(item.itemName, item.category);
 
     return res.status(200).json({ item, results });
   } catch (error) {
