@@ -4,6 +4,16 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Dupe It — Find It Cheaper</title>
+<meta name="description" content="Snap or upload a photo of any outfit, bag, or accessory and Dupe It uses AI to find the real product plus cheaper lookalikes — with live prices and direct buy links."/>
+<meta name="theme-color" content="#8b3a5a"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%8D%EF%B8%8F%3C/text%3E%3C/svg%3E"/>
+<!-- Open Graph / social sharing -->
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Dupe It — Find It Cheaper"/>
+<meta property="og:description" content="Drop a photo, find the deal. AI finds the exact item and cheaper dupes with live prices and direct buy links."/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="Dupe It — Find It Cheaper"/>
+<meta name="twitter:description" content="Drop a photo, find the deal. AI finds the exact item and cheaper dupes with live prices and direct buy links."/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -74,10 +84,11 @@ header{padding:60px 0 32px;text-align:center;animation:rise .9s cubic-bezier(.16
 
 .annotate-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
 .color-row{display:flex;gap:6px;align-items:center}
-.color-swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .2s,border-color .2s;flex-shrink:0}
+.color-swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .2s,border-color .2s;flex-shrink:0;padding:0;font:inherit;-webkit-appearance:none;appearance:none}
+.color-swatch:focus-visible,.stroke-opt:focus-visible,.tool-btn:focus-visible,.tab:focus-visible{outline:2px solid var(--wine);outline-offset:2px}
 .color-swatch.active,.color-swatch:hover{transform:scale(1.2);border-color:var(--ink)}
 .stroke-row{display:flex;gap:6px;align-items:center;margin-left:8px}
-.stroke-opt{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--petal-pale);border:1.5px solid var(--border-s);transition:all .2s;flex-shrink:0}
+.stroke-opt{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--petal-pale);border:1.5px solid var(--border-s);transition:all .2s;flex-shrink:0;padding:0;font:inherit;-webkit-appearance:none;appearance:none}
 .stroke-opt.active,.stroke-opt:hover{background:var(--wine);border-color:var(--wine)}
 .stroke-dot{background:currentColor;border-radius:50%;pointer-events:none}
 .stroke-opt.active .stroke-dot,.stroke-opt:hover .stroke-dot{background:var(--white)}
@@ -274,15 +285,15 @@ footer{text-align:center;padding:36px 0;border-top:1px solid var(--border);margi
 
         <div class="annotate-actions">
           <div class="color-row">
-            <div class="color-swatch active" style="background:#e8879f" onclick="setColor('#e8879f',this)" title="Pink"></div>
-            <div class="color-swatch" style="background:#ff3b30" onclick="setColor('#ff3b30',this)" title="Red"></div>
-            <div class="color-swatch" style="background:#ffffff;border-color:#ccc" onclick="setColor('#ffffff',this)" title="White"></div>
-            <div class="color-swatch" style="background:#1a1118" onclick="setColor('#1a1118',this)" title="Black"></div>
+            <button type="button" class="color-swatch active" style="background:#e8879f" onclick="setColor('#e8879f',this)" title="Pink" aria-label="Pink pen"></button>
+            <button type="button" class="color-swatch" style="background:#ff3b30" onclick="setColor('#ff3b30',this)" title="Red" aria-label="Red pen"></button>
+            <button type="button" class="color-swatch" style="background:#ffffff;border-color:#ccc" onclick="setColor('#ffffff',this)" title="White" aria-label="White pen"></button>
+            <button type="button" class="color-swatch" style="background:#1a1118" onclick="setColor('#1a1118',this)" title="Black" aria-label="Black pen"></button>
           </div>
           <div class="stroke-row">
-            <div class="stroke-opt active" onclick="setStroke(3,this)" title="Thin"><div class="stroke-dot" style="width:4px;height:4px"></div></div>
-            <div class="stroke-opt" onclick="setStroke(6,this)" title="Medium"><div class="stroke-dot" style="width:7px;height:7px"></div></div>
-            <div class="stroke-opt" onclick="setStroke(10,this)" title="Thick"><div class="stroke-dot" style="width:11px;height:11px"></div></div>
+            <button type="button" class="stroke-opt active" onclick="setStroke(3,this)" title="Thin" aria-label="Thin stroke"><div class="stroke-dot" style="width:4px;height:4px"></div></button>
+            <button type="button" class="stroke-opt" onclick="setStroke(6,this)" title="Medium" aria-label="Medium stroke"><div class="stroke-dot" style="width:7px;height:7px"></div></button>
+            <button type="button" class="stroke-opt" onclick="setStroke(10,this)" title="Thick" aria-label="Thick stroke"><div class="stroke-dot" style="width:11px;height:11px"></div></button>
           </div>
           <div class="ann-spacer"></div>
           <button class="bclear" onclick="clearDrawing()">↺ Clear</button>

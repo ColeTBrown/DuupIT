@@ -23,86 +23,101 @@ function extractText(data) {
   return '';
 }
 
-// Build guaranteed-working search URLs for each retailer
-function buildSearchUrls(exactQuery, dupeQuery, size, estimatedMax) {
+// Build guaranteed-working search URLs for each retailer.
+// Used as a fallback when live product search returns nothing.
+function buildSearchUrls(exactQuery, dupeQuery) {
   const eq = encodeURIComponent(exactQuery);
   const dq = encodeURIComponent(dupeQuery);
 
-  // Exact match stores — search for the specific item
   const exactStores = [
-    {
-      store: 'Amazon',
-      productName: `Search Amazon for "${exactQuery}"`,
-      url: `https://www.amazon.com/s?k=${eq}`,
-      note: 'Largest selection, fast shipping'
-    },
-    {
-      store: 'eBay',
-      productName: `Search eBay for "${exactQuery}"`,
-      url: `https://www.ebay.com/sch/i.html?_nkw=${eq}`,
-      note: 'New and pre-owned listings'
-    },
-    {
-      store: 'Google Shopping',
-      productName: `Search Google Shopping for "${exactQuery}"`,
-      url: `https://www.google.com/search?q=${eq}&tbm=shop`,
-      note: 'Compare prices across all stores'
-    },
-    {
-      store: 'Walmart',
-      productName: `Search Walmart for "${exactQuery}"`,
-      url: `https://www.walmart.com/search?q=${eq}`,
-      note: 'Low prices, free pickup'
-    },
-    {
-      store: 'Poshmark',
-      productName: `Search Poshmark for "${exactQuery}"`,
-      url: `https://poshmark.com/search?query=${eq}`,
-      note: 'Pre-loved items, great deals'
-    }
+    { store: 'Amazon', productName: `Search Amazon for "${exactQuery}"`, url: `https://www.amazon.com/s?k=${eq}`, note: 'Largest selection, fast shipping' },
+    { store: 'eBay', productName: `Search eBay for "${exactQuery}"`, url: `https://www.ebay.com/sch/i.html?_nkw=${eq}`, note: 'New and pre-owned listings' },
+    { store: 'Google Shopping', productName: `Search Google Shopping for "${exactQuery}"`, url: `https://www.google.com/search?q=${eq}&tbm=shop`, note: 'Compare prices across all stores' },
+    { store: 'Walmart', productName: `Search Walmart for "${exactQuery}"`, url: `https://www.walmart.com/search?q=${eq}`, note: 'Low prices, free pickup' },
+    { store: 'Poshmark', productName: `Search Poshmark for "${exactQuery}"`, url: `https://poshmark.com/search?query=${eq}`, note: 'Pre-loved items, great deals' }
   ];
 
-  // Dupe stores — search for the style description (cheaper alternatives)
   const dupeStores = [
-    {
-      store: 'SHEIN',
-      productName: `Search SHEIN for "${dupeQuery}"`,
-      url: `https://www.shein.com/search?q=${dq}`,
-      note: 'Very affordable alternatives'
-    },
-    {
-      store: 'Amazon',
-      productName: `Search Amazon for "${dupeQuery}"`,
-      url: `https://www.amazon.com/s?k=${dq}`,
-      note: 'Budget-friendly options with fast shipping'
-    },
-    {
-      store: 'ASOS',
-      productName: `Search ASOS for "${dupeQuery}"`,
-      url: `https://www.asos.com/search/?q=${dq}`,
-      note: 'Trendy affordable fashion'
-    },
-    {
-      store: 'H&M',
-      productName: `Search H&M for "${dupeQuery}"`,
-      url: `https://www2.hm.com/en_us/search-results.html?q=${dq}`,
-      note: 'Affordable high-street style'
-    },
-    {
-      store: 'Zara',
-      productName: `Search Zara for "${dupeQuery}"`,
-      url: `https://www.zara.com/us/en/search?searchTerm=${dq}`,
-      note: 'Trendy styles at mid-range prices'
-    },
-    {
-      store: 'Target',
-      productName: `Search Target for "${dupeQuery}"`,
-      url: `https://www.target.com/s?searchTerm=${dq}`,
-      note: 'Affordable everyday fashion'
-    }
+    { store: 'SHEIN', productName: `Search SHEIN for "${dupeQuery}"`, url: `https://www.shein.com/search?q=${dq}`, note: 'Very affordable alternatives' },
+    { store: 'Amazon', productName: `Search Amazon for "${dupeQuery}"`, url: `https://www.amazon.com/s?k=${dq}`, note: 'Budget-friendly options with fast shipping' },
+    { store: 'ASOS', productName: `Search ASOS for "${dupeQuery}"`, url: `https://www.asos.com/search/?q=${dq}`, note: 'Trendy affordable fashion' },
+    { store: 'H&M', productName: `Search H&M for "${dupeQuery}"`, url: `https://www2.hm.com/en_us/search-results.html?q=${dq}`, note: 'Affordable high-street style' },
+    { store: 'Target', productName: `Search Target for "${dupeQuery}"`, url: `https://www.target.com/s?searchTerm=${dq}`, note: 'Affordable everyday fashion' }
   ];
 
   return { exactStores, dupeStores };
+}
+
+// Normalise one product object coming back from the model into the exact
+// shape the frontend renders. Drops anything without a usable http(s) link.
+function normalizeProducts(arr, fallbackNote) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const p of arr) {
+    const url = String(p?.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) continue;
+    const price = Number(p?.price);
+    const shipping = Number(p?.shipping);
+    const safePrice = Number.isFinite(price) && price > 0 ? price : 0;
+    const safeShip = Number.isFinite(shipping) && shipping >= 0 ? shipping : 0;
+    out.push({
+      store: String(p?.store || 'Shop').trim().slice(0, 40),
+      productName: String(p?.productName || 'Product').trim().slice(0, 140),
+      price: safePrice,
+      shipping: safeShip,
+      totalCost: safePrice ? safePrice + safeShip : 0,
+      url,
+      imageUrl: /^https?:\/\//i.test(String(p?.imageUrl || '')) ? String(p.imageUrl).trim() : '',
+      note: String(p?.note || fallbackNote || '').trim().slice(0, 120)
+    });
+  }
+  return out;
+}
+
+// Use OpenAI's hosted web_search tool to find REAL products with live prices,
+// images and buy links — for both the exact item and cheaper dupes.
+async function findRealProducts(apiKey, item, exactQuery, dupeQuery) {
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4.1-mini',
+      tools: [{ type: 'web_search_preview' }],
+      tool_choice: 'auto',
+      input: [{ role: 'user', content: [{
+        type: 'input_text',
+        text: `You are a shopping assistant. Use web search to find REAL, currently-buyable products for a shopper in the United States.
+
+ITEM: ${item.itemName}
+DESCRIPTION: ${item.description}
+EXACT SEARCH: ${exactQuery}
+DUPE / STYLE SEARCH: ${dupeQuery}
+
+Find:
+1. "exact" — up to 6 listings of the SAME or closest matching product, cheapest total cost first.
+2. "dupes" — up to 6 CHEAPER lookalike products in the same style (different/no brand).
+
+Only include products you actually found a real product page for. Use the direct product-page URL (not a search results page). Include a real product image URL when one is available.
+
+Return ONLY a valid JSON object, no other text:
+{
+  "exact": [
+    { "store": "Retailer name", "productName": "Full product title", "price": 0.00, "shipping": 0.00, "url": "https://direct-product-page", "imageUrl": "https://...", "note": "one short detail (e.g. free shipping, on sale)" }
+  ],
+  "dupes": [ { same fields } ]
+}
+Use numbers for price/shipping in USD (0 for shipping if free). Sort each array cheapest total first. If you cannot find anything for a list, return it as an empty array.`
+      }]}]
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { exact: [], dupes: [] };
+  const parsed = tryParseJson(extractText(data)) || {};
+  return {
+    exact: normalizeProducts(parsed.exact, 'Found via live search'),
+    dupes: normalizeProducts(parsed.dupes, 'Cheaper lookalike')
+  };
 }
 
 async function trackSearch(itemName, category) {
@@ -193,17 +208,30 @@ Return ONLY a valid JSON object — no other text:
     const exactQuery = (item.exactSearchQuery + sizeSuffix + detailsSuffix).trim();
     const dupeQuery = (item.dupeSearchQuery + sizeSuffix + detailsSuffix).trim();
 
-    // ── Step 2: Build guaranteed working search URLs ───────────────────────────
-    const { exactStores, dupeStores } = buildSearchUrls(
-      exactQuery, dupeQuery, size, item.estimatedPrice.max
-    );
+    // ── Step 2: Find real products via web search (with graceful fallback) ─────
+    let exactResults = [];
+    let dupeResults = [];
+    try {
+      const live = await findRealProducts(apiKey, item, exactQuery, dupeQuery);
+      exactResults = live.exact;
+      dupeResults = live.dupes;
+    } catch (e) {
+      console.error('Live product search failed, using fallback:', e);
+    }
 
-    trackSearch(item.itemName, item.category);
+    // Backfill with guaranteed-working store search links if live search came up short
+    const fallback = buildSearchUrls(exactQuery, dupeQuery);
+    if (!exactResults.length) exactResults = fallback.exactStores;
+    if (!dupeResults.length) dupeResults = fallback.dupeStores;
+
+    // Record the search for the "Most Popular" tab. Await so the write isn't
+    // dropped when the serverless function freezes after responding.
+    await trackSearch(item.itemName, item.category);
 
     return res.status(200).json({
       item,
-      exactResults: exactStores,
-      dupeResults: dupeStores
+      exactResults,
+      dupeResults
     });
 
   } catch (error) {
