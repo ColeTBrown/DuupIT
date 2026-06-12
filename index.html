@@ -763,8 +763,20 @@ async function doSearch() {
   document.getElementById('prevSec').classList.remove('on');
   document.getElementById('annotateSec').classList.remove('on');
   document.getElementById('loadSec').classList.add('on');
-  document.getElementById('lhed').textContent = 'Identifying your item…';
-  document.getElementById('lsub').textContent = 'AI vision is analyzing your photo';
+
+  // Staged loading messages so the (slightly longer) search feels intentional.
+  const stages = [
+    ['Identifying your item…', 'AI vision is analyzing your photo'],
+    ['Searching the web…', 'Finding the original source and retailers'],
+    ['Checking every link…', 'Loading live prices and preview images'],
+    ['Almost there…', 'Filtering out dead links and bad matches']
+  ];
+  let stage = 0;
+  const lhed = document.getElementById('lhed');
+  const lsub = document.getElementById('lsub');
+  const setStage = i => { lhed.textContent = stages[i][0]; lsub.textContent = stages[i][1]; };
+  setStage(0);
+  const stageTimer = setInterval(() => { if (stage < stages.length - 1) setStage(++stage); }, 3500);
 
   try {
     const res = await fetch('/api/search', {
@@ -785,6 +797,7 @@ async function doSearch() {
     document.getElementById('prevSec').classList.add('on');
     document.getElementById('annotateSec').classList.add('on');
   } finally {
+    clearInterval(stageTimer);
     btn.disabled = false;
   }
 }
