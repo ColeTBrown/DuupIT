@@ -1,8 +1,10 @@
 // Allow extra time for web search + validating/scraping product pages.
 export const config = { maxDuration: 60 };
 
-// Swap to 'claude-sonnet-4-6' to cut model cost ~40% (slightly less capable).
-const MODEL = 'claude-opus-4-8';
+// Sonnet 4.6 — best balance of capability and cost for vision + web search.
+// Bump to 'claude-opus-4-8' for max capability, or drop to 'claude-haiku-4-5'
+// for the lowest cost on simpler tasks.
+const MODEL = 'claude-sonnet-4-6';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
 
