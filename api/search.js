@@ -1,7 +1,18 @@
 // Allow extra time for web search + validating/scraping product pages.
 export const config = { maxDuration: 60 };
 
+// Swap to 'claude-sonnet-4-6' to cut model cost ~40% (slightly less capable).
+const MODEL = 'claude-opus-4-8';
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
+
+function anthropicHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01'
+  };
+}
 
 function tryParseJson(text) {
   if (!text) return null;
@@ -12,26 +23,19 @@ function tryParseJson(text) {
   return null;
 }
 
+// Concatenate the text blocks from an Anthropic Messages response.
 function extractText(data) {
-  if (typeof data?.output_text === 'string') return data.output_text.trim();
-  if (Array.isArray(data?.output)) {
-    const parts = [];
-    for (const item of data.output) {
-      if (Array.isArray(item?.content)) {
-        for (const part of item.content) {
-          if (typeof part?.text === 'string') parts.push(part.text);
-        }
-      }
-    }
-    if (parts.length) return parts.join('\n').trim();
-  }
-  return '';
+  if (!Array.isArray(data?.content)) return '';
+  return data.content
+    .filter(b => b?.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text)
+    .join('\n')
+    .trim();
 }
 
 // ── HTML meta scraping ────────────────────────────────────────────────────────
 function metaContent(html, names) {
   for (const name of names) {
-    // property="og:image" content="..."  OR  content first then property
     const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i');
     const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${name}["']`, 'i');
     const m = html.match(re1) || html.match(re2);
@@ -45,11 +49,9 @@ function absUrl(maybe, base) {
   try { return new URL(maybe, base).href; } catch { return ''; }
 }
 
-// Pull a price out of JSON-LD / meta tags
 function scrapePrice(html) {
   const meta = metaContent(html, ['product:price:amount', 'og:price:amount']);
   if (meta && Number(meta) > 0) return Number(meta);
-  // JSON-LD "price": "123.45" or "price": 123.45
   const ld = html.match(/"price"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
   if (ld && Number(ld[1]) > 0) return Number(ld[1]);
   const low = html.match(/"lowPrice"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
@@ -70,13 +72,10 @@ async function validateAndEnrich(p) {
       headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }
     });
 
-    // Clearly dead → drop it.
     if (res.status === 404 || res.status === 410 || res.status === 451 || res.status >= 500) return null;
 
     const finalUrl = res.url || p.url;
 
-    // Bot-blocked (we can't read the page). Keep only if the model gave a usable
-    // image already, otherwise drop so we never show an image-less mystery card.
     if (res.status === 401 || res.status === 403 || res.status === 429) {
       return p.imageUrl ? { ...p, url: finalUrl } : null;
     }
@@ -86,7 +85,6 @@ async function validateAndEnrich(p) {
       return p.imageUrl ? { ...p, url: finalUrl } : null;
     }
 
-    // Read a capped amount of HTML (meta tags live in <head>).
     const full = await res.text();
     const html = full.slice(0, 250000);
 
@@ -95,8 +93,7 @@ async function validateAndEnrich(p) {
     const scrapedPrice = scrapePrice(html);
 
     const imageUrl = (img && /^https?:\/\//i.test(img)) ? img : p.imageUrl;
-    // Require a preview image — the whole point is showing the product.
-    if (!imageUrl) return null;
+    if (!imageUrl) return null; // require a preview image
 
     const price = scrapedPrice > 0 ? scrapedPrice : p.price;
     return {
@@ -108,13 +105,12 @@ async function validateAndEnrich(p) {
       totalCost: price ? price + (p.shipping || 0) : 0
     };
   } catch {
-    return null; // timeout / DNS / connection error → treat as dead
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Validate a list with limited concurrency; keep the first `keep` survivors.
 async function enrichList(products, keep) {
   const survivors = [];
   const pool = 6;
@@ -131,7 +127,6 @@ async function enrichList(products, keep) {
   return survivors;
 }
 
-// Normalise raw model output into candidate product objects.
 function normalizeCandidates(arr) {
   if (!Array.isArray(arr)) return [];
   const out = [];
@@ -161,25 +156,68 @@ function normalizeCandidates(arr) {
   return out;
 }
 
-function candidatePrompt(item, exactQuery, dupeQuery) {
-  return `You are a shopping researcher. Use web search to find REAL, in-stock products a US shopper can buy right now.
+// ── Step 1: identify the item with Claude vision ──────────────────────────────
+const VISION_SYSTEM = `You are an expert fashion and product analyst. You will be shown a photo of a product.
+If any area is circled, highlighted, or annotated, focus ONLY on that specific item.
+Respond with ONLY a single valid JSON object and nothing else — no preamble, no explanation, no markdown.
 
-ITEM: ${item.itemName}
+JSON shape:
+{
+  "itemName": "Complete product name. Include brand if visible, color, material, style. Be very specific.",
+  "brand": "Brand name if clearly visible, otherwise empty string",
+  "category": "one of: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other",
+  "description": "Detailed visual description: color, material, cut, fit, distinguishing features, logos",
+  "exactSearchQuery": "Best query to find THIS EXACT product. Lead with brand if known. Include color, style, model. 4-7 words.",
+  "dupeSearchQuery": "Query for CHEAPER SIMILAR alternatives. Describe the style WITHOUT brand names. 4-6 words.",
+  "estimatedPrice": { "min": 0, "max": 0 }
+}`;
+
+async function identifyItem(apiKey, imageBase64) {
+  const res = await fetch(ANTHROPIC_URL, {
+    method: 'POST',
+    headers: anthropicHeaders(apiKey),
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      system: [{ type: 'text', text: VISION_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+          { type: 'text', text: 'Identify the product in this image and return the JSON.' }
+        ]
+      }]
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { error: data?.error?.message || `Vision failed (${res.status})` };
+  }
+  return { parsed: tryParseJson(extractText(data)) };
+}
+
+// ── Step 2: find candidate products anywhere on the web (Claude web search) ────
+const SEARCH_SYSTEM = `You are a shopping researcher with a web search tool. Find REAL, in-stock products a US shopper can buy right now.
+Search the WHOLE web — do not limit yourself to Amazon or SHEIN.
+When you have gathered results, respond with ONLY a single valid JSON object and nothing else.`;
+
+function searchPrompt(item, exactQuery, dupeQuery) {
+  return `ITEM: ${item.itemName}
 BRAND: ${item.brand || '(unknown)'}
 DESCRIPTION: ${item.description}
 EXACT SEARCH: ${exactQuery}
 DUPE / STYLE SEARCH: ${dupeQuery}
 
-Return TWO lists:
-1. "exact" — up to 8 listings of the SAME product. IMPORTANT: find the ORIGINAL SOURCE first — if you can identify the brand, include the product on that brand's OWN official website. Then add other legitimate retailers that carry the exact item (department stores, the brand's stockists, resale sites). Do NOT limit yourself to Amazon/SHEIN — search the whole web.
-2. "dupes" — up to 8 cheaper lookalike products in the same style from any retailer.
+Use web search to build two lists:
+1. "exact" — up to 8 listings of the SAME product. Find the ORIGINAL SOURCE first: if you can identify the brand, include the product on that brand's OWN official website, then add other legitimate retailers carrying the exact item (department stores, stockists, resale sites).
+2. "dupes" — up to 8 cheaper lookalike products in the same style, from any retailer.
 
 Rules:
 - Use the DIRECT product-page URL (a page for that one product), never a search-results or category page.
-- Only include links you are confident resolve to a live product page. Skip anything uncertain.
-- Provide the real image URL and price if you can see them.
+- Only include links you are confident resolve to a live product page.
+- Include the real image URL and price when you can see them.
 
-Return ONLY valid JSON, no other text:
+Respond with ONLY this JSON (no other text):
 {
   "exact": [ { "store": "Retailer", "productName": "Full title", "price": 0.00, "shipping": 0.00, "url": "https://direct-product-page", "imageUrl": "https://...", "note": "short detail" } ],
   "dupes": [ { same fields } ]
@@ -187,44 +225,37 @@ Return ONLY valid JSON, no other text:
 Numbers in USD (0 shipping if free). If a list has nothing reliable, return it empty.`;
 }
 
-async function callWebSearch(apiKey, model, toolType, prompt) {
-  const res = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      tools: [{ type: toolType }],
-      tool_choice: 'required',
-      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }]
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    return { ok: false, error: err?.error?.message || `web search ${res.status}` };
-  }
-  const data = await res.json().catch(() => ({}));
-  return { ok: true, parsed: tryParseJson(extractText(data)) || {} };
-}
-
-// Ask the model (with web search) for candidate products ANYWHERE on the web —
-// prioritising the item's true source/brand site, then other retailers.
-// Tries the current `web_search` tool, then the legacy `web_search_preview`,
-// so it keeps working across OpenAI API/model variations.
 async function findCandidates(apiKey, item, exactQuery, dupeQuery) {
-  const prompt = candidatePrompt(item, exactQuery, dupeQuery);
-  const attempts = [
-    { model: 'gpt-4o', tool: 'web_search' },
-    { model: 'gpt-4o', tool: 'web_search_preview' },
-    { model: 'gpt-4.1', tool: 'web_search_preview' }
-  ];
-  for (const a of attempts) {
-    const r = await callWebSearch(apiKey, a.model, a.tool, prompt);
-    if (!r.ok) { console.error(`web search attempt failed (${a.model}/${a.tool}): ${r.error}`); continue; }
-    const exact = normalizeCandidates(r.parsed.exact);
-    const dupes = normalizeCandidates(r.parsed.dupes);
-    if (exact.length || dupes.length) return { exact, dupes };
+  const messages = [{ role: 'user', content: searchPrompt(item, exactQuery, dupeQuery) }];
+
+  let data = null;
+  // Server-tool loops can pause (stop_reason "pause_turn"); resume a few times.
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: anthropicHeaders(apiKey),
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 3000,
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
+        system: [{ type: 'text', text: SEARCH_SYSTEM, cache_control: { type: 'ephemeral' } }],
+        messages
+      })
+    });
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error('web search failed:', data?.error?.message || res.status); return { exact: [], dupes: [] }; }
+    if (data.stop_reason === 'pause_turn') {
+      messages.push({ role: 'assistant', content: data.content });
+      continue;
+    }
+    break;
   }
-  return { exact: [], dupes: [] };
+
+  const parsed = tryParseJson(extractText(data)) || {};
+  return {
+    exact: normalizeCandidates(parsed.exact),
+    dupes: normalizeCandidates(parsed.dupes)
+  };
 }
 
 // Last-resort broad links (always live) if validation leaves a list empty.
@@ -268,41 +299,13 @@ export default async function handler(req, res) {
     const { imageBase64, size, details } = req.body || {};
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
 
-    // ── Step 1: Identify item with vision ─────────────────────────────────────
-    const visionRes = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        input: [{ role: 'user', content: [
-          {
-            type: 'input_text',
-            text: `You are an expert fashion and product analyst. Study this image carefully.
-If any area is circled, highlighted, or annotated, focus ONLY on that specific item.
-
-Return ONLY a valid JSON object — no other text:
-{
-  "itemName": "Complete product name. Include brand if visible, color, material, style. Be very specific.",
-  "brand": "Brand name if clearly visible, otherwise empty string",
-  "category": "one of: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other",
-  "description": "Detailed visual description: color, material, cut, fit, distinguishing features, logos",
-  "exactSearchQuery": "Best search query to find THIS EXACT product. Lead with brand if known. Include color, style, model name. Keep it concise — 4 to 7 words.",
-  "dupeSearchQuery": "Search query for CHEAPER SIMILAR alternatives. Describe the style WITHOUT brand names. 4 to 6 words.",
-  "estimatedPrice": { "min": 0, "max": 0 }
-}`
-          },
-          { type: 'input_image', image_url: `data:image/jpeg;base64,${imageBase64}` }
-        ]}]
-      })
-    });
-
-    const visionData = await visionRes.json().catch(() => ({}));
-    if (!visionRes.ok) return res.status(500).json({ error: visionData?.error?.message || `Vision failed (${visionRes.status})` });
-
-    const parsedItem = tryParseJson(extractText(visionData));
+    // ── Step 1: identify ──────────────────────────────────────────────────────
+    const vision = await identifyItem(apiKey, imageBase64);
+    if (vision.error) return res.status(500).json({ error: vision.error });
+    const parsedItem = vision.parsed;
     if (!parsedItem?.itemName) return res.status(500).json({ error: 'Could not identify item. Try a clearer photo.' });
 
     const item = {
@@ -323,7 +326,7 @@ Return ONLY a valid JSON object — no other text:
     const exactQuery = (item.exactSearchQuery + sizeSuffix + detailsSuffix).trim();
     const dupeQuery = (item.dupeSearchQuery + sizeSuffix + detailsSuffix).trim();
 
-    // ── Step 2: Find candidates anywhere on the web, then validate + enrich ────
+    // ── Step 2: find candidates, then validate + enrich ───────────────────────
     let exactResults = [];
     let dupeResults = [];
     try {
@@ -338,11 +341,9 @@ Return ONLY a valid JSON object — no other text:
       console.error('Product search/validation failed:', e);
     }
 
-    // Only fall back to broad live-search links if a list is empty.
     if (!exactResults.length) exactResults = fallbackLinks(exactQuery);
     if (!dupeResults.length) dupeResults = fallbackLinks(dupeQuery);
 
-    // Record the search for the "Most Popular" tab.
     await trackSearch(item.itemName, item.category);
 
     return res.status(200).json({ item, exactResults, dupeResults });
