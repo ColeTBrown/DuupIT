@@ -1,3 +1,8 @@
+// Allow extra time for web search + validating/scraping product pages.
+export const config = { maxDuration: 60 };
+
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
+
 function tryParseJson(text) {
   if (!text) return null;
   const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -23,101 +28,212 @@ function extractText(data) {
   return '';
 }
 
-// Build guaranteed-working search URLs for each retailer.
-// Used as a fallback when live product search returns nothing.
-function buildSearchUrls(exactQuery, dupeQuery) {
-  const eq = encodeURIComponent(exactQuery);
-  const dq = encodeURIComponent(dupeQuery);
-
-  const exactStores = [
-    { store: 'Amazon', productName: `Search Amazon for "${exactQuery}"`, url: `https://www.amazon.com/s?k=${eq}`, note: 'Largest selection, fast shipping' },
-    { store: 'eBay', productName: `Search eBay for "${exactQuery}"`, url: `https://www.ebay.com/sch/i.html?_nkw=${eq}`, note: 'New and pre-owned listings' },
-    { store: 'Google Shopping', productName: `Search Google Shopping for "${exactQuery}"`, url: `https://www.google.com/search?q=${eq}&tbm=shop`, note: 'Compare prices across all stores' },
-    { store: 'Walmart', productName: `Search Walmart for "${exactQuery}"`, url: `https://www.walmart.com/search?q=${eq}`, note: 'Low prices, free pickup' },
-    { store: 'Poshmark', productName: `Search Poshmark for "${exactQuery}"`, url: `https://poshmark.com/search?query=${eq}`, note: 'Pre-loved items, great deals' }
-  ];
-
-  const dupeStores = [
-    { store: 'SHEIN', productName: `Search SHEIN for "${dupeQuery}"`, url: `https://www.shein.com/search?q=${dq}`, note: 'Very affordable alternatives' },
-    { store: 'Amazon', productName: `Search Amazon for "${dupeQuery}"`, url: `https://www.amazon.com/s?k=${dq}`, note: 'Budget-friendly options with fast shipping' },
-    { store: 'ASOS', productName: `Search ASOS for "${dupeQuery}"`, url: `https://www.asos.com/search/?q=${dq}`, note: 'Trendy affordable fashion' },
-    { store: 'H&M', productName: `Search H&M for "${dupeQuery}"`, url: `https://www2.hm.com/en_us/search-results.html?q=${dq}`, note: 'Affordable high-street style' },
-    { store: 'Target', productName: `Search Target for "${dupeQuery}"`, url: `https://www.target.com/s?searchTerm=${dq}`, note: 'Affordable everyday fashion' }
-  ];
-
-  return { exactStores, dupeStores };
+// ── HTML meta scraping ────────────────────────────────────────────────────────
+function metaContent(html, names) {
+  for (const name of names) {
+    // property="og:image" content="..."  OR  content first then property
+    const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i');
+    const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${name}["']`, 'i');
+    const m = html.match(re1) || html.match(re2);
+    if (m && m[1]) return m[1].trim();
+  }
+  return '';
 }
 
-// Normalise one product object coming back from the model into the exact
-// shape the frontend renders. Drops anything without a usable http(s) link.
-function normalizeProducts(arr, fallbackNote) {
+function absUrl(maybe, base) {
+  if (!maybe) return '';
+  try { return new URL(maybe, base).href; } catch { return ''; }
+}
+
+// Pull a price out of JSON-LD / meta tags
+function scrapePrice(html) {
+  const meta = metaContent(html, ['product:price:amount', 'og:price:amount']);
+  if (meta && Number(meta) > 0) return Number(meta);
+  // JSON-LD "price": "123.45" or "price": 123.45
+  const ld = html.match(/"price"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
+  if (ld && Number(ld[1]) > 0) return Number(ld[1]);
+  const low = html.match(/"lowPrice"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
+  if (low && Number(low[1]) > 0) return Number(low[1]);
+  return 0;
+}
+
+// Fetch a product page: confirm it's live, and scrape its image/title/price.
+// Returns null when the link is dead (404/410/gone/unreachable).
+async function validateAndEnrich(p) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(p.url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }
+    });
+
+    // Clearly dead → drop it.
+    if (res.status === 404 || res.status === 410 || res.status === 451 || res.status >= 500) return null;
+
+    const finalUrl = res.url || p.url;
+
+    // Bot-blocked (we can't read the page). Keep only if the model gave a usable
+    // image already, otherwise drop so we never show an image-less mystery card.
+    if (res.status === 401 || res.status === 403 || res.status === 429) {
+      return p.imageUrl ? { ...p, url: finalUrl } : null;
+    }
+
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('html')) {
+      return p.imageUrl ? { ...p, url: finalUrl } : null;
+    }
+
+    // Read a capped amount of HTML (meta tags live in <head>).
+    const full = await res.text();
+    const html = full.slice(0, 250000);
+
+    const img = absUrl(metaContent(html, ['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']), finalUrl);
+    const title = metaContent(html, ['og:title', 'twitter:title']);
+    const scrapedPrice = scrapePrice(html);
+
+    const imageUrl = (img && /^https?:\/\//i.test(img)) ? img : p.imageUrl;
+    // Require a preview image — the whole point is showing the product.
+    if (!imageUrl) return null;
+
+    const price = scrapedPrice > 0 ? scrapedPrice : p.price;
+    return {
+      ...p,
+      url: finalUrl,
+      imageUrl,
+      productName: title ? title.slice(0, 140) : p.productName,
+      price,
+      totalCost: price ? price + (p.shipping || 0) : 0
+    };
+  } catch {
+    return null; // timeout / DNS / connection error → treat as dead
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Validate a list with limited concurrency; keep the first `keep` survivors.
+async function enrichList(products, keep) {
+  const survivors = [];
+  const pool = 6;
+  let idx = 0;
+  async function worker() {
+    while (idx < products.length && survivors.length < keep) {
+      const mine = products[idx++];
+      const ok = await validateAndEnrich(mine);
+      if (ok) survivors.push(ok);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(pool, products.length) }, worker));
+  survivors.sort((a, b) => (a.totalCost || Infinity) - (b.totalCost || Infinity));
+  return survivors;
+}
+
+// Normalise raw model output into candidate product objects.
+function normalizeCandidates(arr) {
   if (!Array.isArray(arr)) return [];
   const out = [];
+  const seen = new Set();
   for (const p of arr) {
     const url = String(p?.url || '').trim();
     if (!/^https?:\/\//i.test(url)) continue;
+    let host;
+    try { host = new URL(url).host; } catch { continue; }
+    if (seen.has(url)) continue;
+    seen.add(url);
     const price = Number(p?.price);
     const shipping = Number(p?.shipping);
     const safePrice = Number.isFinite(price) && price > 0 ? price : 0;
     const safeShip = Number.isFinite(shipping) && shipping >= 0 ? shipping : 0;
     out.push({
-      store: String(p?.store || 'Shop').trim().slice(0, 40),
+      store: String(p?.store || host.replace(/^www\./, '')).trim().slice(0, 40),
       productName: String(p?.productName || 'Product').trim().slice(0, 140),
       price: safePrice,
       shipping: safeShip,
       totalCost: safePrice ? safePrice + safeShip : 0,
       url,
       imageUrl: /^https?:\/\//i.test(String(p?.imageUrl || '')) ? String(p.imageUrl).trim() : '',
-      note: String(p?.note || fallbackNote || '').trim().slice(0, 120)
+      note: String(p?.note || '').trim().slice(0, 120)
     });
   }
   return out;
 }
 
-// Use OpenAI's hosted web_search tool to find REAL products with live prices,
-// images and buy links — for both the exact item and cheaper dupes.
-async function findRealProducts(apiKey, item, exactQuery, dupeQuery) {
-  const res = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4.1-mini',
-      tools: [{ type: 'web_search_preview' }],
-      tool_choice: 'auto',
-      input: [{ role: 'user', content: [{
-        type: 'input_text',
-        text: `You are a shopping assistant. Use web search to find REAL, currently-buyable products for a shopper in the United States.
+function candidatePrompt(item, exactQuery, dupeQuery) {
+  return `You are a shopping researcher. Use web search to find REAL, in-stock products a US shopper can buy right now.
 
 ITEM: ${item.itemName}
+BRAND: ${item.brand || '(unknown)'}
 DESCRIPTION: ${item.description}
 EXACT SEARCH: ${exactQuery}
 DUPE / STYLE SEARCH: ${dupeQuery}
 
-Find:
-1. "exact" — up to 6 listings of the SAME or closest matching product, cheapest total cost first.
-2. "dupes" — up to 6 CHEAPER lookalike products in the same style (different/no brand).
+Return TWO lists:
+1. "exact" — up to 8 listings of the SAME product. IMPORTANT: find the ORIGINAL SOURCE first — if you can identify the brand, include the product on that brand's OWN official website. Then add other legitimate retailers that carry the exact item (department stores, the brand's stockists, resale sites). Do NOT limit yourself to Amazon/SHEIN — search the whole web.
+2. "dupes" — up to 8 cheaper lookalike products in the same style from any retailer.
 
-Only include products you actually found a real product page for. Use the direct product-page URL (not a search results page). Include a real product image URL when one is available.
+Rules:
+- Use the DIRECT product-page URL (a page for that one product), never a search-results or category page.
+- Only include links you are confident resolve to a live product page. Skip anything uncertain.
+- Provide the real image URL and price if you can see them.
 
-Return ONLY a valid JSON object, no other text:
+Return ONLY valid JSON, no other text:
 {
-  "exact": [
-    { "store": "Retailer name", "productName": "Full product title", "price": 0.00, "shipping": 0.00, "url": "https://direct-product-page", "imageUrl": "https://...", "note": "one short detail (e.g. free shipping, on sale)" }
-  ],
+  "exact": [ { "store": "Retailer", "productName": "Full title", "price": 0.00, "shipping": 0.00, "url": "https://direct-product-page", "imageUrl": "https://...", "note": "short detail" } ],
   "dupes": [ { same fields } ]
 }
-Use numbers for price/shipping in USD (0 for shipping if free). Sort each array cheapest total first. If you cannot find anything for a list, return it as an empty array.`
-      }]}]
+Numbers in USD (0 shipping if free). If a list has nothing reliable, return it empty.`;
+}
+
+async function callWebSearch(apiKey, model, toolType, prompt) {
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      tools: [{ type: toolType }],
+      tool_choice: 'required',
+      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }]
     })
   });
-
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { ok: false, error: err?.error?.message || `web search ${res.status}` };
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return { exact: [], dupes: [] };
-  const parsed = tryParseJson(extractText(data)) || {};
-  return {
-    exact: normalizeProducts(parsed.exact, 'Found via live search'),
-    dupes: normalizeProducts(parsed.dupes, 'Cheaper lookalike')
-  };
+  return { ok: true, parsed: tryParseJson(extractText(data)) || {} };
+}
+
+// Ask the model (with web search) for candidate products ANYWHERE on the web —
+// prioritising the item's true source/brand site, then other retailers.
+// Tries the current `web_search` tool, then the legacy `web_search_preview`,
+// so it keeps working across OpenAI API/model variations.
+async function findCandidates(apiKey, item, exactQuery, dupeQuery) {
+  const prompt = candidatePrompt(item, exactQuery, dupeQuery);
+  const attempts = [
+    { model: 'gpt-4o', tool: 'web_search' },
+    { model: 'gpt-4o', tool: 'web_search_preview' },
+    { model: 'gpt-4.1', tool: 'web_search_preview' }
+  ];
+  for (const a of attempts) {
+    const r = await callWebSearch(apiKey, a.model, a.tool, prompt);
+    if (!r.ok) { console.error(`web search attempt failed (${a.model}/${a.tool}): ${r.error}`); continue; }
+    const exact = normalizeCandidates(r.parsed.exact);
+    const dupes = normalizeCandidates(r.parsed.dupes);
+    if (exact.length || dupes.length) return { exact, dupes };
+  }
+  return { exact: [], dupes: [] };
+}
+
+// Last-resort broad links (always live) if validation leaves a list empty.
+function fallbackLinks(query) {
+  const q = encodeURIComponent(query);
+  return [
+    { store: 'Google Shopping', productName: `Browse live listings for "${query}"`, url: `https://www.google.com/search?tbm=shop&q=${q}`, price: 0, shipping: 0, totalCost: 0, imageUrl: '', note: 'Compare prices across every store' },
+    { store: 'Google', productName: `Search the web for "${query}"`, url: `https://www.google.com/search?q=${q}`, price: 0, shipping: 0, totalCost: 0, imageUrl: '', note: 'Find the original source and more' }
+  ];
 }
 
 async function trackSearch(itemName, category) {
@@ -202,37 +318,34 @@ Return ONLY a valid JSON object — no other text:
       }
     };
 
-    // Append size and details to search queries if provided
     const sizeSuffix = size ? ` ${size}` : '';
     const detailsSuffix = details ? ` ${details}` : '';
     const exactQuery = (item.exactSearchQuery + sizeSuffix + detailsSuffix).trim();
     const dupeQuery = (item.dupeSearchQuery + sizeSuffix + detailsSuffix).trim();
 
-    // ── Step 2: Find real products via web search (with graceful fallback) ─────
+    // ── Step 2: Find candidates anywhere on the web, then validate + enrich ────
     let exactResults = [];
     let dupeResults = [];
     try {
-      const live = await findRealProducts(apiKey, item, exactQuery, dupeQuery);
-      exactResults = live.exact;
-      dupeResults = live.dupes;
+      const cand = await findCandidates(apiKey, item, exactQuery, dupeQuery);
+      const [ex, du] = await Promise.all([
+        enrichList(cand.exact, 6),
+        enrichList(cand.dupes, 6)
+      ]);
+      exactResults = ex;
+      dupeResults = du;
     } catch (e) {
-      console.error('Live product search failed, using fallback:', e);
+      console.error('Product search/validation failed:', e);
     }
 
-    // Backfill with guaranteed-working store search links if live search came up short
-    const fallback = buildSearchUrls(exactQuery, dupeQuery);
-    if (!exactResults.length) exactResults = fallback.exactStores;
-    if (!dupeResults.length) dupeResults = fallback.dupeStores;
+    // Only fall back to broad live-search links if a list is empty.
+    if (!exactResults.length) exactResults = fallbackLinks(exactQuery);
+    if (!dupeResults.length) dupeResults = fallbackLinks(dupeQuery);
 
-    // Record the search for the "Most Popular" tab. Await so the write isn't
-    // dropped when the serverless function freezes after responding.
+    // Record the search for the "Most Popular" tab.
     await trackSearch(item.itemName, item.category);
 
-    return res.status(200).json({
-      item,
-      exactResults,
-      dupeResults
-    });
+    return res.status(200).json({ item, exactResults, dupeResults });
 
   } catch (error) {
     console.error('Handler error:', error);
