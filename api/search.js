@@ -52,6 +52,8 @@ const VISION_SYSTEM = `You are an expert fashion and product analyst. You will b
 If any area is circled, highlighted, or annotated, focus ONLY on that specific item.
 Respond with ONLY a single valid JSON object and nothing else — no preamble, no explanation, no markdown.
 
+GUARDRAIL: Only identify shoppable physical products (clothing, shoes, bags, accessories, jewelry, home goods, electronics, beauty). If the image contains no shoppable product, is primarily a person's face/body rather than an item, or contains explicit, illegal, or otherwise inappropriate content, return {"itemName": ""} and nothing else.
+
 JSON shape:
 {
   "itemName": "Complete product name. Include brand if visible, color, material, style. Be very specific.",
