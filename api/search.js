@@ -153,6 +153,56 @@ function fallbackLink(query) {
   }];
 }
 
+// ── Usage limits (cost protection) ────────────────────────────────────────────
+// Per-user free searches per day, and a global daily ceiling that caps your
+// worst-case spend. Both configurable via env vars.
+const FREE_DAILY_LIMIT = Number(process.env.FREE_DAILY_LIMIT || 8);
+const GLOBAL_DAILY_CAP = Number(process.env.GLOBAL_DAILY_CAP || 300);
+
+async function kv(command) {
+  const url = process.env.KV_REST_API_URL, token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return null;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(command)
+  });
+  const d = await r.json().catch(() => ({}));
+  return d.result;
+}
+
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.headers['x-real-ip'] || 'unknown';
+}
+
+// Returns { ok: true } or { ok: false, status, error }.
+// No KV configured → don't block (but you MUST configure KV before going public).
+async function checkLimits(req) {
+  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) return { ok: true };
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  try {
+    // Global cost ceiling — caps total searches across all users per day.
+    const gKey = `cap:global:${day}`;
+    const gCount = await kv(['INCR', gKey]);
+    if (gCount === 1) await kv(['EXPIRE', gKey, 172800]);
+    if (gCount > GLOBAL_DAILY_CAP) {
+      return { ok: false, status: 503, error: 'Dupe It is at capacity for today — please check back tomorrow.' };
+    }
+    // Per-user (per-IP) daily free limit.
+    const uKey = `rl:${clientIp(req)}:${day}`;
+    const uCount = await kv(['INCR', uKey]);
+    if (uCount === 1) await kv(['EXPIRE', uKey, 172800]);
+    if (uCount > FREE_DAILY_LIMIT) {
+      return { ok: false, status: 429, error: `You've used your ${FREE_DAILY_LIMIT} free searches for today. Come back tomorrow for more.` };
+    }
+  } catch (e) {
+    console.error('Rate-limit check failed (allowing through):', e);
+  }
+  return { ok: true };
+}
+
 async function trackSearch(itemName, category) {
   try {
     const url = process.env.KV_REST_API_URL;
@@ -175,6 +225,10 @@ export default async function handler(req, res) {
   try {
     const { imageBase64, size, details } = req.body || {};
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
+
+    // Enforce usage limits BEFORE spending money on AI / SerpAPI.
+    const limit = await checkLimits(req);
+    if (!limit.ok) return res.status(limit.status).json({ error: limit.error });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
