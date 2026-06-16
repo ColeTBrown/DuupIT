@@ -1,22 +1,16 @@
-// Allow extra time for web search + validating/scraping product pages.
-export const config = { maxDuration: 60 };
+// Vision (Claude) identifies the item; SerpAPI Google Shopping returns real
+// products with photos, prices, store names and buy links.
+export const config = { maxDuration: 30 };
 
-// Sonnet 4.6 — best balance of capability and cost for vision + web search.
-// Bump to 'claude-opus-4-8' for max capability, or drop to 'claude-haiku-4-5'
-// for the lowest cost on simpler tasks.
+// Sonnet 4.6 — best balance of capability and cost. Bump to 'claude-opus-4-8'
+// for max capability, or 'claude-haiku-4-5' for lowest cost.
 const MODEL = 'claude-sonnet-4-6';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
+const SERPAPI_URL = 'https://serpapi.com/search.json';
 
-// Overall wall-clock budget for the whole request. We must return before Vercel
-// kills the function (maxDuration 60s), so leave generous headroom.
-const TOTAL_BUDGET_MS = 50000;
 const VISION_TIMEOUT_MS = 18000;
-const SEARCH_TIMEOUT_MS = 32000;
-const PAGE_TIMEOUT_MS = 3500;       // per product-page validation fetch
-const MAX_ENRICH_MS = 12000;        // hard cap on the validation/scrape phase
+const SERP_TIMEOUT_MS = 15000;
 
-// fetch with an abort timeout so no single call can hang the function.
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -44,7 +38,6 @@ function tryParseJson(text) {
   return null;
 }
 
-// Concatenate the text blocks from an Anthropic Messages response.
 function extractText(data) {
   if (!Array.isArray(data?.content)) return '';
   return data.content
@@ -52,135 +45,6 @@ function extractText(data) {
     .map(b => b.text)
     .join('\n')
     .trim();
-}
-
-// ── HTML meta scraping ────────────────────────────────────────────────────────
-function metaContent(html, names) {
-  for (const name of names) {
-    const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i');
-    const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${name}["']`, 'i');
-    const m = html.match(re1) || html.match(re2);
-    if (m && m[1]) return m[1].trim();
-  }
-  return '';
-}
-
-function absUrl(maybe, base) {
-  if (!maybe) return '';
-  try { return new URL(maybe, base).href; } catch { return ''; }
-}
-
-function scrapePrice(html) {
-  const meta = metaContent(html, ['product:price:amount', 'og:price:amount']);
-  if (meta && Number(meta) > 0) return Number(meta);
-  const ld = html.match(/"price"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
-  if (ld && Number(ld[1]) > 0) return Number(ld[1]);
-  const low = html.match(/"lowPrice"\s*:\s*"?(\d+(?:\.\d{1,2})?)"?/i);
-  if (low && Number(low[1]) > 0) return Number(low[1]);
-  return 0;
-}
-
-// Fetch a product page: confirm it's live, and scrape its image/title/price.
-// Returns null when the link is dead (404/410/gone/unreachable).
-async function validateAndEnrich(p) {
-  try {
-    const res = await fetchWithTimeout(p.url, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }
-    }, PAGE_TIMEOUT_MS);
-
-    if (res.status === 404 || res.status === 410 || res.status === 451 || res.status >= 500) return null;
-
-    const finalUrl = res.url || p.url;
-
-    if (res.status === 401 || res.status === 403 || res.status === 429) {
-      return p.imageUrl ? { ...p, url: finalUrl } : null;
-    }
-
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('html')) {
-      return p.imageUrl ? { ...p, url: finalUrl } : null;
-    }
-
-    const full = await res.text();
-    const html = full.slice(0, 250000);
-
-    const img = absUrl(metaContent(html, ['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']), finalUrl);
-    const title = metaContent(html, ['og:title', 'twitter:title']);
-    const scrapedPrice = scrapePrice(html);
-
-    const imageUrl = (img && /^https?:\/\//i.test(img)) ? img : p.imageUrl;
-    if (!imageUrl) return null; // require a preview image
-
-    const price = scrapedPrice > 0 ? scrapedPrice : p.price;
-    return {
-      ...p,
-      url: finalUrl,
-      imageUrl,
-      productName: title ? title.slice(0, 140) : p.productName,
-      price,
-      totalCost: price ? price + (p.shipping || 0) : 0
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function enrichList(products, keep, deadline) {
-  const survivors = [];
-  const pool = 8;
-  let idx = 0;
-  async function worker() {
-    while (idx < products.length && survivors.length < keep && Date.now() < deadline) {
-      const mine = products[idx++];
-      const ok = await validateAndEnrich(mine);
-      if (ok) survivors.push(ok);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(pool, products.length) }, worker));
-
-  // Ran out of time (or couldn't validate enough)? Backfill with the model's
-  // own candidates that already have an image, so we never return empty/slow.
-  if (survivors.length < keep) {
-    const have = new Set(survivors.map(s => s.url));
-    for (const p of products) {
-      if (survivors.length >= keep) break;
-      if (!have.has(p.url) && p.imageUrl) survivors.push(p);
-    }
-  }
-
-  survivors.sort((a, b) => (a.totalCost || Infinity) - (b.totalCost || Infinity));
-  return survivors;
-}
-
-function normalizeCandidates(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seen = new Set();
-  for (const p of arr) {
-    const url = String(p?.url || '').trim();
-    if (!/^https?:\/\//i.test(url)) continue;
-    let host;
-    try { host = new URL(url).host; } catch { continue; }
-    if (seen.has(url)) continue;
-    seen.add(url);
-    const price = Number(p?.price);
-    const shipping = Number(p?.shipping);
-    const safePrice = Number.isFinite(price) && price > 0 ? price : 0;
-    const safeShip = Number.isFinite(shipping) && shipping >= 0 ? shipping : 0;
-    out.push({
-      store: String(p?.store || host.replace(/^www\./, '')).trim().slice(0, 40),
-      productName: String(p?.productName || 'Product').trim().slice(0, 140),
-      price: safePrice,
-      shipping: safeShip,
-      totalCost: safePrice ? safePrice + safeShip : 0,
-      url,
-      imageUrl: /^https?:\/\//i.test(String(p?.imageUrl || '')) ? String(p.imageUrl).trim() : '',
-      note: String(p?.note || '').trim().slice(0, 120)
-    });
-  }
-  return out;
 }
 
 // ── Step 1: identify the item with Claude vision ──────────────────────────────
@@ -194,7 +58,7 @@ JSON shape:
   "brand": "Brand name if clearly visible, otherwise empty string",
   "category": "one of: clothing, shoes, bag, jewelry, accessory, home_decor, electronics, beauty, other",
   "description": "Detailed visual description: color, material, cut, fit, distinguishing features, logos",
-  "exactSearchQuery": "Best query to find THIS EXACT product. Lead with brand if known. Include color, style, model. 4-7 words.",
+  "exactSearchQuery": "Best query to find THIS EXACT product to buy. Lead with brand if known. Include color, style, model. 4-8 words.",
   "dupeSearchQuery": "Query for CHEAPER SIMILAR alternatives. Describe the style WITHOUT brand names. 4-6 words.",
   "estimatedPrice": { "min": 0, "max": 0 }
 }`;
@@ -222,88 +86,71 @@ async function identifyItem(apiKey, imageBase64) {
     return { error: 'Vision timed out. Please try again.' };
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return { error: data?.error?.message || `Vision failed (${res.status})` };
-  }
+  if (!res.ok) return { error: data?.error?.message || `Vision failed (${res.status})` };
   return { parsed: tryParseJson(extractText(data)) };
 }
 
-// ── Step 2: find candidate products anywhere on the web (Claude web search) ────
-const SEARCH_SYSTEM = `You are a shopping researcher with a web search tool. Find REAL, in-stock products a US shopper can buy right now.
-Search the WHOLE web — do not limit yourself to Amazon or SHEIN.
-When you have gathered results, respond with ONLY a single valid JSON object and nothing else.`;
-
-function searchPrompt(item, exactQuery, dupeQuery) {
-  return `ITEM: ${item.itemName}
-BRAND: ${item.brand || '(unknown)'}
-DESCRIPTION: ${item.description}
-EXACT SEARCH: ${exactQuery}
-DUPE / STYLE SEARCH: ${dupeQuery}
-
-Use web search to build two lists:
-1. "exact" — up to 8 listings of the SAME product. Find the ORIGINAL SOURCE first: if you can identify the brand, include the product on that brand's OWN official website, then add other legitimate retailers carrying the exact item (department stores, stockists, resale sites).
-2. "dupes" — up to 8 cheaper lookalike products in the same style, from any retailer.
-
-Rules:
-- Use the DIRECT product-page URL (a page for that one product), never a search-results or category page.
-- Only include links you are confident resolve to a live product page.
-- Include the real image URL and price when you can see them.
-
-Respond with ONLY this JSON (no other text):
-{
-  "exact": [ { "store": "Retailer", "productName": "Full title", "price": 0.00, "shipping": 0.00, "url": "https://direct-product-page", "imageUrl": "https://...", "note": "short detail" } ],
-  "dupes": [ { same fields } ]
-}
-Numbers in USD (0 shipping if free). If a list has nothing reliable, return it empty.`;
-}
-
-async function findCandidates(apiKey, item, exactQuery, dupeQuery) {
-  const messages = [{ role: 'user', content: searchPrompt(item, exactQuery, dupeQuery) }];
-
-  let data = null;
-  // Server-tool loops can pause (stop_reason "pause_turn"); resume a couple times.
-  // max_uses is capped to bound how long the model can spend searching.
-  for (let i = 0; i < 2; i++) {
-    let res;
-    try {
-      res = await fetchWithTimeout(ANTHROPIC_URL, {
-        method: 'POST',
-        headers: anthropicHeaders(apiKey),
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 2500,
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
-          system: [{ type: 'text', text: SEARCH_SYSTEM, cache_control: { type: 'ephemeral' } }],
-          messages
-        })
-      }, SEARCH_TIMEOUT_MS);
-    } catch {
-      console.error('web search timed out');
-      return { exact: [], dupes: [] };
-    }
-    data = await res.json().catch(() => ({}));
-    if (!res.ok) { console.error('web search failed:', data?.error?.message || res.status); return { exact: [], dupes: [] }; }
-    if (data.stop_reason === 'pause_turn') {
-      messages.push({ role: 'assistant', content: data.content });
-      continue;
-    }
-    break;
-  }
-
-  const parsed = tryParseJson(extractText(data)) || {};
+// ── Step 2: real products via SerpAPI Google Shopping ─────────────────────────
+function mapShoppingResult(r) {
+  const price = Number(r.extracted_price) || 0;
+  const url = r.link || r.product_link || '';
+  const imageUrl = r.thumbnail || '';
+  let note = '';
+  if (r.delivery) note = String(r.delivery);
+  else if (r.rating) note = `${r.rating}★${r.reviews ? ` (${r.reviews})` : ''}`;
   return {
-    exact: normalizeCandidates(parsed.exact),
-    dupes: normalizeCandidates(parsed.dupes)
+    store: String(r.source || 'Shop').trim().slice(0, 40),
+    productName: String(r.title || 'Product').trim().slice(0, 140),
+    price,
+    shipping: 0,
+    totalCost: price || 0,
+    url,
+    imageUrl,
+    note: note.slice(0, 60)
   };
 }
 
-// Last-resort broad links (always live) if validation leaves a list empty.
-function fallbackLinks(query) {
+// One Google Shopping search. cheapest=true sorts low→high (for dupes).
+async function shoppingSearch(serpKey, query, { cheapest = false, limit = 8 } = {}) {
+  const params = new URLSearchParams({
+    engine: 'google_shopping',
+    q: query,
+    api_key: serpKey,
+    gl: 'us',
+    hl: 'en',
+    num: '40'
+  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${SERPAPI_URL}?${params.toString()}`, {}, SERP_TIMEOUT_MS);
+  } catch {
+    return [];
+  }
+  if (!res.ok) { console.error('SerpAPI error', res.status); return []; }
+  const data = await res.json().catch(() => ({}));
+  let items = (data.shopping_results || [])
+    .map(mapShoppingResult)
+    // Require a real buy link and a product image — that's the whole point.
+    .filter(p => /^https?:\/\//i.test(p.url) && /^https?:\/\//i.test(p.imageUrl));
+
+  // De-dupe by URL.
+  const seen = new Set();
+  items = items.filter(p => (seen.has(p.url) ? false : (seen.add(p.url), true)));
+
+  if (cheapest) items.sort((a, b) => (a.price || Infinity) - (b.price || Infinity));
+  return items.slice(0, limit);
+}
+
+// Last-resort link if SerpAPI is unavailable or returns nothing.
+function fallbackLink(query) {
   const q = encodeURIComponent(query);
-  return [
-    { store: 'Google Shopping', productName: `Browse live listings for "${query}"`, url: `https://www.google.com/search?tbm=shop&q=${q}`, price: 0, shipping: 0, totalCost: 0, imageUrl: '', note: 'Compare prices across every store' },
-    { store: 'Google', productName: `Search the web for "${query}"`, url: `https://www.google.com/search?q=${q}`, price: 0, shipping: 0, totalCost: 0, imageUrl: '', note: 'Find the original source and more' }
-  ];
+  return [{
+    store: 'Google Shopping',
+    productName: `Browse listings for "${query}"`,
+    url: `https://www.google.com/search?tbm=shop&q=${q}`,
+    price: 0, shipping: 0, totalCost: 0, imageUrl: '',
+    note: 'Compare prices across every store'
+  }];
 }
 
 async function trackSearch(itemName, category) {
@@ -313,20 +160,11 @@ async function trackSearch(itemName, category) {
     if (!url || !token) return;
     const key = itemName.toLowerCase().trim().replace(/\s+/g, '_').slice(0, 60);
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-    await fetch(url, {
-      method: 'POST', headers,
-      body: JSON.stringify(['HINCRBY', 'search_counts', key, '1'])
-    });
-    const existRes = await fetch(url, {
-      method: 'POST', headers,
-      body: JSON.stringify(['HEXISTS', 'item_meta', key])
-    });
+    await fetch(url, { method: 'POST', headers, body: JSON.stringify(['HINCRBY', 'search_counts', key, '1']) });
+    const existRes = await fetch(url, { method: 'POST', headers, body: JSON.stringify(['HEXISTS', 'item_meta', key]) });
     const existData = await existRes.json().catch(() => ({}));
     if (!existData.result) {
-      await fetch(url, {
-        method: 'POST', headers,
-        body: JSON.stringify(['HSET', 'item_meta', key, JSON.stringify({ name: itemName, category })])
-      });
+      await fetch(url, { method: 'POST', headers, body: JSON.stringify(['HSET', 'item_meta', key, JSON.stringify({ name: itemName, category })]) });
     }
   } catch (e) { console.error('KV error (non-fatal):', e); }
 }
@@ -334,13 +172,13 @@ async function trackSearch(itemName, category) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const startedAt = Date.now();
   try {
     const { imageBase64, size, details } = req.body || {};
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
+    const serpKey = process.env.SERPAPI_KEY;
 
     // ── Step 1: identify ──────────────────────────────────────────────────────
     const vision = await identifyItem(apiKey, imageBase64);
@@ -366,27 +204,20 @@ export default async function handler(req, res) {
     const exactQuery = (item.exactSearchQuery + sizeSuffix + detailsSuffix).trim();
     const dupeQuery = (item.dupeSearchQuery + sizeSuffix + detailsSuffix).trim();
 
-    // ── Step 2: find candidates, then validate + enrich ───────────────────────
+    // ── Step 2: real products ─────────────────────────────────────────────────
     let exactResults = [];
     let dupeResults = [];
-    try {
-      const cand = await findCandidates(apiKey, item, exactQuery, dupeQuery);
-      // Give validation only the time we have left, capped — then return what
-      // we've got (backfilled from model data) so we never trip the 504.
-      const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
-      const deadline = Date.now() + Math.max(0, Math.min(MAX_ENRICH_MS, remaining - 3000));
-      const [ex, du] = await Promise.all([
-        enrichList(cand.exact, 6, deadline),
-        enrichList(cand.dupes, 6, deadline)
+    if (serpKey) {
+      [exactResults, dupeResults] = await Promise.all([
+        shoppingSearch(serpKey, exactQuery, { limit: 8 }),
+        shoppingSearch(serpKey, dupeQuery, { cheapest: true, limit: 8 })
       ]);
-      exactResults = ex;
-      dupeResults = du;
-    } catch (e) {
-      console.error('Product search/validation failed:', e);
+    } else {
+      console.error('Missing SERPAPI_KEY — returning fallback links');
     }
 
-    if (!exactResults.length) exactResults = fallbackLinks(exactQuery);
-    if (!dupeResults.length) dupeResults = fallbackLinks(dupeQuery);
+    if (!exactResults.length) exactResults = fallbackLink(exactQuery);
+    if (!dupeResults.length) dupeResults = fallbackLink(dupeQuery);
 
     await trackSearch(item.itemName, item.category);
 
