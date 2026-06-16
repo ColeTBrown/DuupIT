@@ -8,6 +8,25 @@ const MODEL = 'claude-sonnet-4-6';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
 
+// Overall wall-clock budget for the whole request. We must return before Vercel
+// kills the function (maxDuration 60s), so leave generous headroom.
+const TOTAL_BUDGET_MS = 50000;
+const VISION_TIMEOUT_MS = 18000;
+const SEARCH_TIMEOUT_MS = 32000;
+const PAGE_TIMEOUT_MS = 3500;       // per product-page validation fetch
+const MAX_ENRICH_MS = 12000;        // hard cap on the validation/scrape phase
+
+// fetch with an abort timeout so no single call can hang the function.
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function anthropicHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
@@ -64,15 +83,12 @@ function scrapePrice(html) {
 // Fetch a product page: confirm it's live, and scrape its image/title/price.
 // Returns null when the link is dead (404/410/gone/unreachable).
 async function validateAndEnrich(p) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(p.url, {
+    const res = await fetchWithTimeout(p.url, {
       method: 'GET',
       redirect: 'follow',
-      signal: controller.signal,
       headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }
-    });
+    }, PAGE_TIMEOUT_MS);
 
     if (res.status === 404 || res.status === 410 || res.status === 451 || res.status >= 500) return null;
 
@@ -108,23 +124,32 @@ async function validateAndEnrich(p) {
     };
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-async function enrichList(products, keep) {
+async function enrichList(products, keep, deadline) {
   const survivors = [];
-  const pool = 6;
+  const pool = 8;
   let idx = 0;
   async function worker() {
-    while (idx < products.length && survivors.length < keep) {
+    while (idx < products.length && survivors.length < keep && Date.now() < deadline) {
       const mine = products[idx++];
       const ok = await validateAndEnrich(mine);
       if (ok) survivors.push(ok);
     }
   }
   await Promise.all(Array.from({ length: Math.min(pool, products.length) }, worker));
+
+  // Ran out of time (or couldn't validate enough)? Backfill with the model's
+  // own candidates that already have an image, so we never return empty/slow.
+  if (survivors.length < keep) {
+    const have = new Set(survivors.map(s => s.url));
+    for (const p of products) {
+      if (survivors.length >= keep) break;
+      if (!have.has(p.url) && p.imageUrl) survivors.push(p);
+    }
+  }
+
   survivors.sort((a, b) => (a.totalCost || Infinity) - (b.totalCost || Infinity));
   return survivors;
 }
@@ -175,22 +200,27 @@ JSON shape:
 }`;
 
 async function identifyItem(apiKey, imageBase64) {
-  const res = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: anthropicHeaders(apiKey),
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      system: [{ type: 'text', text: VISION_SYSTEM, cache_control: { type: 'ephemeral' } }],
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-          { type: 'text', text: 'Identify the product in this image and return the JSON.' }
-        ]
-      }]
-    })
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: anthropicHeaders(apiKey),
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1024,
+        system: [{ type: 'text', text: VISION_SYSTEM, cache_control: { type: 'ephemeral' } }],
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+            { type: 'text', text: 'Identify the product in this image and return the JSON.' }
+          ]
+        }]
+      })
+    }, VISION_TIMEOUT_MS);
+  } catch {
+    return { error: 'Vision timed out. Please try again.' };
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     return { error: data?.error?.message || `Vision failed (${res.status})` };
@@ -231,19 +261,26 @@ async function findCandidates(apiKey, item, exactQuery, dupeQuery) {
   const messages = [{ role: 'user', content: searchPrompt(item, exactQuery, dupeQuery) }];
 
   let data = null;
-  // Server-tool loops can pause (stop_reason "pause_turn"); resume a few times.
-  for (let i = 0; i < 4; i++) {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: anthropicHeaders(apiKey),
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 3000,
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
-        system: [{ type: 'text', text: SEARCH_SYSTEM, cache_control: { type: 'ephemeral' } }],
-        messages
-      })
-    });
+  // Server-tool loops can pause (stop_reason "pause_turn"); resume a couple times.
+  // max_uses is capped to bound how long the model can spend searching.
+  for (let i = 0; i < 2; i++) {
+    let res;
+    try {
+      res = await fetchWithTimeout(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: anthropicHeaders(apiKey),
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 2500,
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
+          system: [{ type: 'text', text: SEARCH_SYSTEM, cache_control: { type: 'ephemeral' } }],
+          messages
+        })
+      }, SEARCH_TIMEOUT_MS);
+    } catch {
+      console.error('web search timed out');
+      return { exact: [], dupes: [] };
+    }
     data = await res.json().catch(() => ({}));
     if (!res.ok) { console.error('web search failed:', data?.error?.message || res.status); return { exact: [], dupes: [] }; }
     if (data.stop_reason === 'pause_turn') {
@@ -297,6 +334,7 @@ async function trackSearch(itemName, category) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const startedAt = Date.now();
   try {
     const { imageBase64, size, details } = req.body || {};
     if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' });
@@ -333,9 +371,13 @@ export default async function handler(req, res) {
     let dupeResults = [];
     try {
       const cand = await findCandidates(apiKey, item, exactQuery, dupeQuery);
+      // Give validation only the time we have left, capped — then return what
+      // we've got (backfilled from model data) so we never trip the 504.
+      const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
+      const deadline = Date.now() + Math.max(0, Math.min(MAX_ENRICH_MS, remaining - 3000));
       const [ex, du] = await Promise.all([
-        enrichList(cand.exact, 6),
-        enrichList(cand.dupes, 6)
+        enrichList(cand.exact, 6, deadline),
+        enrichList(cand.dupes, 6, deadline)
       ]);
       exactResults = ex;
       dupeResults = du;
