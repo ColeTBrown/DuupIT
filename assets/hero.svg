@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Dupe It — Find it cheaper, love it more.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdf2f5"/>
+      <stop offset="1" stop-color="#f6d9e2"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b03a5b"/>
+      <stop offset="1" stop-color="#d9607f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <g font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+    <text x="80" y="108" fill="#c06a84" font-size="20" letter-spacing="7" font-weight="600">AI-POWERED SHOPPING</text>
+    <text x="78" y="196" fill="url(#ink)" font-size="92" font-weight="700" font-family="Georgia, 'Times New Roman', serif" font-style="italic">Dupe It</text>
+    <text x="80" y="246" fill="#6b4a54" font-size="30">Find it cheaper, love it more.</text>
+    <text x="80" y="288" fill="#a97c8a" font-size="19">Snap a photo of any outfit, bag, or accessory → the real product plus cheaper lookalikes.</text>
+  </g>
+  <g transform="translate(980,74)">
+    <rect x="0" y="0" width="190" height="172" rx="22" fill="#ffffff" opacity="0.72"/>
+    <rect x="22" y="26" width="146" height="34" rx="9" fill="#f3dbe3"/>
+    <text x="36" y="48" fill="#8a5c6c" font-size="15" font-family="ui-sans-serif, sans-serif">Original  $128</text>
+    <rect x="22" y="72" width="146" height="34" rx="9" fill="#fbe6ec"/>
+    <text x="36" y="94" fill="#b03a5b" font-size="15" font-weight="700" font-family="ui-sans-serif, sans-serif">Dupe found  $34</text>
+    <rect x="22" y="120" width="146" height="30" rx="15" fill="url(#ink)"/>
+    <text x="95" y="140" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle" font-family="ui-sans-serif, sans-serif">SAVE 73%</text>
+  </g>
+</svg>
